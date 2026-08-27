@@ -1,0 +1,42 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "::",
+      "listen_port": 443,
+      "obfs": {
+        "type": "salamander",
+        "password": "CHANGE_ME_OBFS_PASSWORD"
+      },
+      "users": [
+        {
+          "name": "user1",
+          "password": "CHANGE_ME_USER_PASSWORD"
+        }
+      ],
+      "ignore_client_bandwidth": false,
+      "tls": {
+        "enabled": true,
+        "server_name": "NODE_HOST",
+        "certificate_path": "/etc/sing-box/self.crt",
+        "key_path": "/etc/sing-box/self.key"
+      },
+      "masquerade": {
+        "type": "proxy",
+        "url": "https://www.bing.com",
+        "rewrite_host": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+# ⚠️ 公开仓库铁律: 密钥/证书/环境变量 一律禁止提交
+# 本仓库是公开的, 任何 .pem/.key/.env 进 git 即等于泄漏
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.env
+.env.*
+__pycache__/
+*.pyc
+.DS_Store
+backups/
