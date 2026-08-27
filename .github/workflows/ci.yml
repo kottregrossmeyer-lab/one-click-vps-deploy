@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash 语法检查
+        run: |
+          failed=0
+          while IFS= read -r -d '' f; do
+            bash -n "$f" || { echo "语法错误: $f"; failed=1; }
+          done < <(find . -type f -name '*.sh' -print0)
+          exit $failed
+
+      - name: Python 语法检查
+        run: python3 -m py_compile subconverter/server.py
+
+      - name: sing-box 配置 JSON 校验
+        run: |
+          failed=0
+          for f in $(find . -type f -name '*.json'); do
+            jq empty "$f" || { echo "JSON 非法: $f"; failed=1; }
+          done
+          exit $failed
+
+      - name: 密钥 / 证书 / 环境变量扫描
+        run: |
+          set -e
+          if grep -rInE --exclude-dir=.git --exclude-dir=__pycache__ \
+              'BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}' . 2>/dev/null; then
+            echo "检测到疑似密钥内容,拒绝合并" >&2
+            exit 1
+          fi
+          if find . -type f \( -name '*.pem' -o -name '*.key' -o -name '*.crt' \
+              -o -name '*.p12' -o -name '*.pfx' -o -name '.env' -o -name '.env.*' \
+              -o -name 'id_ed25519*' -o -name 'authorized_keys' \) | grep -q .; then
+            find . -type f \( -name '*.pem' -o -name '*.key' -o -name '*.crt' \
+              -o -name '*.p12' -o -name '*.pfx' -o -name '.env' -o -name '.env.*' \
+              -o -name 'id_ed25519*' -o -name 'authorized_keys' \)
+            echo "检测到密钥 / 证书 / 环境变量文件,拒绝合并" >&2
+            exit 1
+          fi
+          echo "通过"

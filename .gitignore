@@ -5,6 +5,8 @@
 *.crt
 *.p12
 *.pfx
+id_ed25519*
+authorized_keys
 .env
 .env.*
 __pycache__/

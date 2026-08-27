@@ -3,6 +3,7 @@
 > 一套开箱即用的一键脚本：VPS 节点部署、订阅转换服务、PVE 虚拟机创建。零依赖、多发行版、所有凭据部署时现场生成，仓库不含任何密钥。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![ci](https://github.com/kottregressmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/kottregressmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml)
 
 ## 简介
 
@@ -69,6 +70,10 @@ curl -fsSL -o /tmp/nexus.sh https://mirror.notebase.cn/download/nexus.sh && sudo
 - 脚本引用的 `mirror.notebase.cn` 为公开分发点，无需鉴权。
 - 注意：Let's Encrypt 单 IP 7 天内最多签发 5 张证书，反复重装测试会触发限速（脚本会自动回退自签）。
 - 建议：使用任何一键脚本前先通读源码——这正是开源的意义。
+
+## 贡献
+
+想提功能或修 bug，先看 [CONTRIBUTING.md](CONTRIBUTING.md)。标准 fork + pull request 流程，PR 会自动跑语法检查和密钥扫描（`.github/workflows/ci.yml`），通过才合并。
 
 ## 📜 License
 
