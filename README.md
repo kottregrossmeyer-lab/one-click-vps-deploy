@@ -3,7 +3,7 @@
 > 一套开箱即用的一键脚本：VPS 节点部署、订阅转换服务、PVE 虚拟机创建。零依赖、多发行版、所有凭据部署时现场生成，仓库不含任何密钥。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![ci](https://github.com/kottregressmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/kottregressmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml)
+[![ci](https://github.com/kottregrossmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/kottregrossmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml)
 
 ## 简介
 
