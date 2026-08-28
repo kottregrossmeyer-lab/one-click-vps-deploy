@@ -16,9 +16,6 @@
 #   - 有 HY2 时输出双节点 selector (VLESS + HY2 可切换); 没填 HY2 时输出与 v4 逐字节一致
 #
 # v5.1 (2026-08-21) 支持仅 Hysteria2 (rawVlessUrl 可缺省), 服务名去掉 VLESS 改称"订阅转换服务"
-#
-# v5.2 (2026-08-28) tun stack 默认改 gvisor(修 Linux 客户端, 不依赖内核 IP 转发);
-#   新增路由器分支: ?target=singbox&router=1 → tun auto_redirect + system 栈(与 new.worker.js 对齐)
 import http.server, json, base64, os, re
 from urllib.parse import urlparse, parse_qs, unquote
 NL = chr(10)  # newline
@@ -40,6 +37,9 @@ RULE_SERVER = 'https://mirror.notebase.cn/rules'  # GEOIP 兜底库(自托管, I
 # 规则集(geosite/geoip)对动态CDN子域名(如 Google Play 分片下载用的
 # rr4---sn-xxxx.gvt1.com)覆盖滞后或不全,导致大文件/多并发下载卡死。
 # 这里的域名精确匹配放在规则集判断之前,命中即生效,不依赖规则集更新。
+# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
+# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
+# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
@@ -222,20 +222,20 @@ HARDCODED_PROXY_SUFFIX = [
     'observeit.net', 'openvpn.net', 'perfect-privacy.com', 'surfshark.com', 'symauth.com',
     'symcb.com', 'symcd.com', 'teamviewer.com', 'ubnt.com', 'vpnunlimited.com', 'whoer.net',
 
-    # #成人/看片 (73)
+    # #成人/看片 (76)
     '18comic.org', '91porn.com', '9xbuddy.com', 'avgle.com', 'beeg.com', 'brazzers.com',
     'camwhores.tv', 'chaturbate.com', 'danbooru.donmai.us', 'e-hentai.org', 'e621.net',
     'eporner.com', 'erome.com', 'exhentai.org', 'gelbooru.com', 'hanime.tv', 'hanime1.com',
     'hanimeone.me', 'hitomi.la', 'jable.tv', 'jav.com', 'javbus.com', 'javchu.com', 'javdb.com',
     'javlibrary.com', 'kali.download', 'kat.cr', 'konachan.com', 'livejasmin.com', 'm-team.cc',
-    'manyvids.com', 'megaupload.com', 'missav.com', 'missav.ws', 'missav.ai', 'missav.tube', 'motherless.com', 'myfreecams.com',
-    'naughtyamerica.com', 'netflav.com', 'nhentai.net', 'onejav.com', 'onlyfans.com', 'phncdn.com',
-    'picacomic.com', 'playboy.com', 'pornhd.com', 'pornhub.com', 'realitykings.com', 'redtube.com',
-    'rule34.xxx', 'sankakucomplex.com', 'sehuatang.net', 'sex.com', 'sex8.cc', 'sis001.com',
-    'south-plus.net', 'spankbang.com', 'streamate.com', 'stripchat.com', 't66y.com',
-    'thepiratebay.org', 'tnaflix.com', 'tube8.com', 'vporn.com', 'wnacg.org', 'x-art.com',
-    'xhamster.com', 'xnxx.com', 'xtube.com', 'xv-ru.com', 'xvideos-cdn.com', 'xvideos.com',
-    'yande.re', 'youjizz.com', 'youporn.com',
+    'manyvids.com', 'megaupload.com', 'missav.com', 'missav.ws', 'missav.ai', 'missav.tube',
+    'motherless.com', 'myfreecams.com', 'naughtyamerica.com', 'netflav.com', 'nhentai.net',
+    'onejav.com', 'onlyfans.com', 'phncdn.com', 'picacomic.com', 'playboy.com', 'pornhd.com',
+    'pornhub.com', 'realitykings.com', 'redtube.com', 'rule34.xxx', 'sankakucomplex.com',
+    'sehuatang.net', 'sex.com', 'sex8.cc', 'sis001.com', 'south-plus.net', 'spankbang.com',
+    'streamate.com', 'stripchat.com', 't66y.com', 'thepiratebay.org', 'tnaflix.com', 'tube8.com',
+    'vporn.com', 'wnacg.org', 'x-art.com', 'xhamster.com', 'xnxx.com', 'xtube.com', 'xv-ru.com',
+    'xvideos-cdn.com', 'xvideos.com', 'yande.re', 'youjizz.com', 'youporn.com',
 
     # #其他 (13)
     'archive.org', 'cdn.angruo.com', 'debug.com', 'kenengba.com', 'lithium.com', 'mobile01.com',
@@ -263,8 +263,8 @@ HARDCODED_PROXY_OVERRIDE = [
 
 # 代理：域名关键字匹配
 HARDCODED_PROXY_KEYWORD = [
-    'blogspot', 'facebook', 'gmail', 'google', 'instagram', 'missav', 'openaicom-api', 'pixiv', 'twitter',
-    'youtube',
+    'blogspot', 'facebook', 'gmail', 'google', 'instagram', 'missav', 'openaicom-api', 'pixiv',
+    'twitter', 'youtube',
 ]
 
 # 直连：域名后缀匹配(国内大厂/CDN/境外可直连)
@@ -575,6 +575,9 @@ HARDCODED_PROXY_IP_CIDR = [
     # #Anthropic-Claude (1)
     '160.79.104.0/21',
 ]
+
+
+
 
 
 
