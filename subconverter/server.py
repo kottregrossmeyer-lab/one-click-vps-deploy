@@ -16,6 +16,9 @@
 #   - 有 HY2 时输出双节点 selector (VLESS + HY2 可切换); 没填 HY2 时输出与 v4 逐字节一致
 #
 # v5.1 (2026-08-21) 支持仅 Hysteria2 (rawVlessUrl 可缺省), 服务名去掉 VLESS 改称"订阅转换服务"
+#
+# v5.2 (2026-08-28) tun stack 默认改 gvisor(修 Linux 客户端, 不依赖内核 IP 转发);
+#   新增路由器分支: ?target=singbox&router=1 → tun auto_redirect + system 栈(与 new.worker.js 对齐)
 import http.server, json, base64, os, re
 from urllib.parse import urlparse, parse_qs, unquote
 NL = chr(10)  # newline
@@ -584,7 +587,7 @@ HARDCODED_PROXY_IP_CIDR = [
 
 
 # ── 缓存 ──
-_cache = {'mtime': 0, 'singbox': None, 'clash': None, 'raw_vless': None, 'node_name': '🇯🇵 Osaka'}
+_cache = {'mtime': 0, 'singbox': None, 'singbox_router': None, 'clash': None, 'raw_vless': None, 'node_name': '🇯🇵 Osaka'}
 
 
 def parse_vless(raw_url):
@@ -745,7 +748,7 @@ def _hy2_outbound(node):
     return ob
 
 
-def build_singbox(nodes):
+def build_singbox(nodes, router_mode=False):
     proxy_tag = 'proxy'
     node_hosts = [n['address'] for n in nodes]
 
@@ -792,6 +795,12 @@ def build_singbox(nodes):
     outbounds.append({'type': 'direct', 'tag': 'direct'})
     outbounds.append({'type': 'block', 'tag': 'block'})
 
+    tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
+           'address': ['172.19.0.1/30'], 'mtu': 9000, 'auto_route': True,
+           'strict_route': True, 'stack': 'system' if router_mode else 'gvisor'}
+    if router_mode:
+        tun['auto_redirect'] = True
+
     return {
         'log': {'level': 'warn', 'timestamp': True},
         'dns': {
@@ -808,8 +817,7 @@ def build_singbox(nodes):
             'final': 'dns-proxy',
         },
         'inbounds': [
-            {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox', 'address': ['172.19.0.1/30'],
-             'mtu': 9000, 'auto_route': True, 'strict_route': True, 'stack': 'system'},
+            tun,
             {'type': 'mixed', 'tag': 'mixed-in', 'listen': '0.0.0.0', 'listen_port': 7890},
         ],
         'outbounds': outbounds,
@@ -991,6 +999,7 @@ def get_configs():
         _cache['raw_hy2'] = raw_hy2 or None
         _cache['node_name'] = name
         _cache['singbox'] = json.dumps(build_singbox(nodes), indent=2, ensure_ascii=False)
+        _cache['singbox_router'] = json.dumps(build_singbox(nodes, router_mode=True), indent=2, ensure_ascii=False)
         _cache['clash'] = build_clash(nodes)
     return _cache
 
@@ -1009,15 +1018,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ua = self.headers.get('User-Agent', '').lower()
             qs = parse_qs(urlparse(self.path).query) if '?' in self.path else {}
             target = (qs.get('target', [''])[0] or '').lower()
+            router = (qs.get('router', [''])[0] or '').lower() in ('1', 'true', 'yes')
 
             # /health
             if self.path == '/health':
                 self._respond(200, 'OK', 'text/plain')
                 return
 
-            # sing-box
+            # sing-box (router=1 输出 auto_redirect + system 栈, 与 new.worker.js 对齐)
             if any(k in ua for k in ('sing-box', 'sfa', 'sfi', 'sfm')) or target == 'singbox':
-                self._respond(200, c['singbox'], 'application/json')
+                body = c['singbox_router'] if router else c['singbox']
+                self._respond(200, body, 'application/json')
                 return
 
             # Clash
