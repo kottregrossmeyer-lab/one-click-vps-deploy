@@ -766,6 +766,8 @@ def build_singbox(nodes, router_mode=False):
         {'domain': HARDCODED_PROXY_DOMAIN, 'server': 'dns-proxy'},
         {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
         {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'server': 'dns-proxy'},
+        # geosite-cn 国内域名大全: 未硬编码的国内域名(字节新CDN等) DNS 走阿里, 出口国内 + geoDNS 正确
+        {'rule_set': ['geosite-cn'], 'server': 'dns-direct'},
     ]
 
     route_rules = [
@@ -782,6 +784,8 @@ def build_singbox(nodes, router_mode=False):
         {'domain': HARDCODED_PROXY_DOMAIN, 'outbound': proxy_tag},
         {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'outbound': proxy_tag},
         {'ip_is_private': True, 'outbound': 'direct'},
+        # geosite-cn 域名级国内兜底: 与 GEOIP 兜底互补(域名先判), 国内域名直接出站
+        {'rule_set': ['geosite-cn'], 'outbound': 'direct'},
         # GEOIP 兜底层: 硬编码规则没列到的域名按解析出的IP归属判断, 中国IP直接出站
         {'rule_set': ['geoip-cn'], 'outbound': 'direct'},
     ]
@@ -826,6 +830,10 @@ def build_singbox(nodes, router_mode=False):
             'auto_detect_interface': True,
             'rules': route_rules,
             'rule_set': [{
+                'type': 'remote', 'tag': 'geosite-cn', 'format': 'binary',
+                'url': RULE_SERVER + '/sing/geosite/cn.srs',
+                'download_detour': 'direct', 'update_interval': '24h',
+            }, {
                 'type': 'remote', 'tag': 'geoip-cn', 'format': 'binary',
                 'url': RULE_SERVER + '/sing/geoip/cn.srs',
                 'download_detour': 'direct', 'update_interval': '24h',
