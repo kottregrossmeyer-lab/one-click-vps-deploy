@@ -228,7 +228,7 @@ HARDCODED_PROXY_SUFFIX = [
     'eporner.com', 'erome.com', 'exhentai.org', 'gelbooru.com', 'hanime.tv', 'hanime1.com',
     'hanimeone.me', 'hitomi.la', 'jable.tv', 'jav.com', 'javbus.com', 'javchu.com', 'javdb.com',
     'javlibrary.com', 'kali.download', 'kat.cr', 'konachan.com', 'livejasmin.com', 'm-team.cc',
-    'manyvids.com', 'megaupload.com', 'missav.com', 'motherless.com', 'myfreecams.com',
+    'manyvids.com', 'megaupload.com', 'missav.com', 'missav.ws', 'missav.ai', 'missav.tube', 'motherless.com', 'myfreecams.com',
     'naughtyamerica.com', 'netflav.com', 'nhentai.net', 'onejav.com', 'onlyfans.com', 'phncdn.com',
     'picacomic.com', 'playboy.com', 'pornhd.com', 'pornhub.com', 'realitykings.com', 'redtube.com',
     'rule34.xxx', 'sankakucomplex.com', 'sehuatang.net', 'sex.com', 'sex8.cc', 'sis001.com',
