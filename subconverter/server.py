@@ -814,7 +814,7 @@ def build_singbox(nodes, router_mode=False):
                 {'tag': 'dns-fakeip', 'type': 'fakeip', 'inet4_range': '198.18.0.0/16'},
             ],
             'rules': dns_rules,
-            'final': 'dns-direct',
+            'final': 'dns-proxy',
         },
         'inbounds': [
             tun,
