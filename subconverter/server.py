@@ -263,7 +263,7 @@ HARDCODED_PROXY_OVERRIDE = [
 
 # 代理：域名关键字匹配
 HARDCODED_PROXY_KEYWORD = [
-    'blogspot', 'facebook', 'gmail', 'google', 'instagram', 'openaicom-api', 'pixiv', 'twitter',
+    'blogspot', 'facebook', 'gmail', 'google', 'instagram', 'missav', 'openaicom-api', 'pixiv', 'twitter',
     'youtube',
 ]
 
