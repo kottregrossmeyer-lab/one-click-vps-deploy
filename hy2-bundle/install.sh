@@ -504,7 +504,8 @@ fi
 echo -e "${CYAN}===== 9. 部署 systemd service 并启动 =====${NC}"
 cp "$SCRIPT_DIR/systemd/sing-box.service" /etc/systemd/system/sing-box.service
 systemctl daemon-reload
-systemctl enable --now sing-box
+systemctl enable sing-box
+systemctl restart sing-box
 
 sleep 2
 if ! systemctl is-active --quiet sing-box; then
