@@ -437,6 +437,21 @@ else
 fi
 echo "$NODE_HOST" > /etc/sing-box/node_host
 
+# ========== 6.5 提前放行 80 端口(LE 证书申请前) ==========
+# 修复: 证书申请(certbot standalone, 80端口)在第7步, 防火墙配置在第10-12步, 顺序在后。
+# 全新机器 ufw/firewalld 未启用时无影响; 但已部署过的机器上 ufw/firewalld 已启用,
+# 80 未放行 → LE CA 从外网连 http://<域名>/.well-known/acme-challenge/ 超时
+# ("Timeout during connect (likely firewall problem)"), 证书申请失败被迫回退自签。
+# 这里在申请前先放行 80, 后续步骤10-12 再 allow 一次(幂等, 无害)。
+if [[ "$CERT_MODE" == "le" ]]; then
+    if [[ "$OS_FAMILY" == "debian" ]] && command -v ufw >/dev/null 2>&1; then
+        ufw allow 80/tcp >/dev/null 2>&1 || true
+    elif [[ "$OS_FAMILY" == "rhel" ]] && command -v firewall-cmd >/dev/null 2>&1; then
+        firewall-cmd --permanent --add-port=80/tcp >/dev/null 2>&1 || true
+        firewall-cmd --reload >/dev/null 2>&1 || true
+    fi
+fi
+
 # ========== 7. 配置证书(HY2需要;VLESS免) ==========
 echo -e "${CYAN}===== 7. 配置证书 =====${NC}"
 if [[ "$CERT_MODE" == "none" ]]; then
@@ -449,6 +464,7 @@ echo -e "${GREEN}>> 正在申请 Let's Encrypt 证书 ($NODE_HOST) ...${NC}"
 echo -e "${GREEN}>> LE 证书已颁发: $NODE_HOST${NC}"
     else
         echo -e "${RED}!! LE 证书申请失败,回退自签证书(客户端导入链接自动跳过证书校验)${NC}"
+        echo -e "${RED}!! 若失败原因为 80 端口连不上,除系统防火墙(ufw/firewalld)外,请确认云服务商安全组已放行 80/tcp 入站(证书申请通过后仅续期时需要)${NC}"
         CERT_MODE="self"
         CERT_PATH="/etc/sing-box/self.crt"
         KEY_PATH="/etc/sing-box/self.key"
