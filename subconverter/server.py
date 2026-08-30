@@ -43,6 +43,7 @@ RULE_SERVER = 'https://mirror.notebase.cn/rules'  # GEOIP 兜底库(自托管, I
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
+# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 HARDCODED_PROXY_SUFFIX = [
     # #Google (102)
     '1e100.net', 'abc.xyz', 'ad-delivery.net', 'admob.com', 'agones.dev', 'ampproject.org',
@@ -589,6 +590,7 @@ HARDCODED_PROXY_IP_CIDR = [
 
 
 
+
 # ── 缓存 ──
 _cache = {'mtime': 0, 'singbox': None, 'singbox_router': None, 'clash': None, 'raw_vless': None, 'node_name': '🇯🇵 Osaka'}
 
@@ -812,6 +814,8 @@ def build_singbox(nodes, router_mode=False):
         'log': {'level': 'warn', 'timestamp': True},
         'dns': {
             'servers': [
+                # 注意:1.12+ 里 DNS server 不带 detour 即默认走空 direct,显式写 'detour': 'direct' 会报
+                # "detour to an empty direct outbound makes no sense" 直接 fatal。dns-bootstrap/dns-direct 保持无 detour。
                 {'tag': 'dns-bootstrap', 'type': 'udp', 'server': DNS['bootstrap']},
                 {'tag': 'dns-direct', 'type': 'https', 'server': DNS['adgServer'], 'server_port': DNS['adgPort'],
                  'path': DNS['adgPath'], 'domain_resolver': 'dns-bootstrap'},
@@ -952,7 +956,9 @@ def build_clash(nodes):
         '  use-hosts: true',
         '  default-nameserver:',
         f'    - {DNS["bootstrap"]}',
+        '    - 119.29.29.29',
         '  nameserver:',
+        '    - "https://doh.pub/dns-query"',
         '    - "https://dns.alidns.com/dns-query"',
         '  fake-ip-filter:',
         '    - "*.lan"',
