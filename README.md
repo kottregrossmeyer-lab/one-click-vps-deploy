@@ -62,25 +62,6 @@ curl -fsSL -o /tmp/hy2.sh https://mirror.notebase.cn/bundle/hy2.sh && sudo bash 
 curl -fsSL -o /tmp/nexus.sh https://mirror.notebase.cn/download/nexus.sh && sudo bash /tmp/nexus.sh
 ```
 
-## ④ Cloudflare 订阅 Worker（`worker/new.worker.js`）
-
-生产级订阅分发 Worker（CF Workers/Pages，可绑自定义域），单文件零依赖：
-
-- **双协议**：HY2 / VLESS，节点链接走环境变量（`HY2`、`VLESS` secret）注入，仓库不含密钥
-- **多格式**：按 User-Agent 自动返回 sing-box / Clash / v2rayN 三种订阅（`?target=` 可强制指定）
-- **域名分流**：7 个数组（DIRECT/PROXY 后缀·域名·override·keyword·IP CIDR）按厂商/服务分类
-- **DNS 分层**：阿里 DoH（直连）/ 1.1.1.1 DoH 走代理隧道 / fakeip
-- **sing-box 1.14+ 兼容**：远程规则集走顶层 `http_clients`（`download_detour` 已弃用、1.16 移除）
-
-```bash
-# 部署示例（wrangler，自定义域/Secret 自动保留）
-wrangler deploy worker/new.worker.js --name my-subscription-worker
-```
-
-> ⚠️ 本 Worker 默认引用 `mirror.notebase.cn/rules` 的规则镜像（公开分发点）。自行部署时如不可用，可用 `RULE_SERVER` 环境变量指向你自己的规则源。
-
----
-
 ## 🔒 安全说明
 
 - **本仓库不含任何密钥 / 密码 / 凭证**。所有密码、节点口令、证书均在部署时于目标机器上现场生成（`openssl rand` / `certbot`）。
