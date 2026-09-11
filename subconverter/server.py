@@ -10,13 +10,19 @@
 #   - clash: override 规则排最前, 结尾 MATCH,PROXY
 #   - fakeip 掩码 198.18.0.0/16, 7890 mixed 入站, 支持 VLESS/HY2 双节点
 #
+# v5.2 (2026-09-11) 新增两条旁路(老路径逐字节未变, 失败只影响自己那条链接):
+#   ① "规则集模式": 请求 /rules 或 ?mode=rules 时返回规则集版分流(14 集走 mirror 自托管, 与 CF worker
+#      sub-rules 同源); 默认(老链接)仍是纯硬编码。两模式共用同一批节点。deploy.sh 会额外打印该链接。
+#   ② "小火箭规则配置": ?target=conf(或 shadowrocket)返回 John Shall lazy.conf 去注释干净版,
+#      ?raw=1 返回原样 + [Proxy] 注入节点行(vless 注入 / hysteria2 只能注释); 拉不到上游自动退回最小配置。
+#
 # v5 (2026-08-21) 新增 Hysteria2 (HY2) 支持, 纯加法分支, VLESS-only 行为不变:
 #   - config.json 可加可选 rawHy2Url (hysteria2:// 或 hy2://)
 #   - HY2 支持端口跳跃: 单端口 / 端口段 a-b / 逗号混合 (sing-box: server_ports+hop_interval; clash: ports+hop-interval)
 #   - 有 HY2 时输出双节点 selector (VLESS + HY2 可切换); 没填 HY2 时输出与 v4 逐字节一致
 #
 # v5.1 (2026-08-21) 支持仅 Hysteria2 (rawVlessUrl 可缺省), 服务名去掉 VLESS 改称"订阅转换服务"
-import http.server, json, base64, os, re
+import http.server, json, base64, os, re, time, urllib.request
 from urllib.parse import urlparse, parse_qs, unquote
 NL = chr(10)  # newline
 
@@ -32,17 +38,33 @@ DNS = {
 DASHBOARD_URL = 'https://mirror.notebase.cn/download/yacd-ui.zip'
 RULE_SERVER = 'https://mirror.notebase.cn/rules'  # GEOIP 兜底库(自托管, IP→国家映射, 相对稳定)
 
+# ─────────────────────────────────────────────────────────────
+# 规则集模式(2026-09-11 新增旁路)
+# ⚠️ 硬编码老路径(get_configs / build_singbox / build_clash)一个字节未动;
+#    规则集版只在请求 /rules 或 ?mode=rules 时构建, 生成失败不影响老链接。
+# 集清单对齐 CF worker sub-rules(~/rule.worker.js): geosite 10 + geoip 3 + special 2。
+# 🔒 不含 google-cn: 该集错误收录 mtalk.google.com/fonts.googleapis.com 等解析到全局
+#    Google IP 的域名, 国内直连必超时(GCM 推送实测 i/o timeout); Google 整系走代理。
+RULES_META_GEOSITE = ['private', 'cn', 'geolocation-!cn', 'category-ads-all',
+                      'google', 'apple', 'microsoft', 'github', 'openai', 'telegram']
+RULES_META_GEOIP = ['private', 'cn', 'telegram']
+RULES_DUSTIN_SPECIAL = ['microsoft-cn', 'apple-cn']
+RULES_SING_SKIP_GEOSITE = {'category-ads-all'}  # sing-box 侧不挂 ads 集(与 rule.worker.js 一致)
+RULES_PROXY_DOMAIN_SETS = [['github'], ['openai'], ['telegram']]
+
+# ─────────────────────────────────────────────────────────────
+# 小火箭(Shadowrocket)规则配置(2026-09-11 新增旁路, ?target=conf)
+# 规则不自己写轮子: 直接引用 John Shall 的 lazy.conf(实时拉取, 永远最新), 默认返回去注释的干净版;
+# ?raw=1 返回原样 + 在 [Proxy] 空段注入节点行。⚠️ 与 CF worker sub-rules 行为一致:
+# hysteria2 节点行 conf 表达不了(Shadowrocket 只能走 URI 订阅导入), 所以只写注释防断网。
+SHADOWROCKET_LAZY_CONF = 'https://johnshall.github.io/Shadowrocket-ADBlock-Rules-Forever/lazy.conf'
+SHADOWROCKET_CACHE_TTL = 3600
+
 
 # ── 手写域名兜底列表 (源自 Shadowrocket 官方规则 + 历史踩坑记录) ──
 # 规则集(geosite/geoip)对动态CDN子域名(如 Google Play 分片下载用的
 # rr4---sn-xxxx.gvt1.com)覆盖滞后或不全,导致大文件/多并发下载卡死。
 # 这里的域名精确匹配放在规则集判断之前,命中即生效,不依赖规则集更新。
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
-# 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 # 代理：域名后缀匹配(境外服务/AI/社交等, 同步自 new.worker.js 2026-08-25)
 HARDCODED_PROXY_SUFFIX = [
     # #Google (102)
@@ -575,6 +597,18 @@ HARDCODED_PROXY_IP_CIDR = [
 
     # #Anthropic-Claude (1)
     '160.79.104.0/21',
+
+    # #谷歌国内落地 (13)
+    '120.232.181.162/32', '120.241.147.226/32', '120.253.253.226/32', '120.253.255.162/32',
+    '120.253.255.34/32', '120.253.255.98/32', '180.163.150.162/32', '180.163.150.34/32',
+    '180.163.151.162/32', '180.163.151.34/32', '220.181.174.162/32', '220.181.174.226/32',
+    '220.181.174.34/32',
+
+    # #谷歌国内落地 (5)
+    '203.208.39.0/24', '203.208.40.0/24', '203.208.41.0/24', '203.208.43.0/24', '203.208.50.0/24',
+
+    # #机场 (2)
+    '24.199.123.28/32', '64.23.132.171/32',
 ]
 
 
@@ -591,8 +625,26 @@ HARDCODED_PROXY_IP_CIDR = [
 
 
 
+
+
+
+
+
+
+
+
+
+
 # ── 缓存 ──
-_cache = {'mtime': 0, 'singbox': None, 'singbox_router': None, 'clash': None, 'raw_vless': None, 'node_name': '🇯🇵 Osaka'}
+_cache = {'mtime': 0, 'singbox': None, 'singbox_router': None, 'clash': None, 'raw_vless': None, 'node_name': 'node'}
+
+
+def _url_fragment(raw):
+    """取链接 # 后的节点显示名(如 vless://…#node → 'node'),无 # 返回 ''"""
+    if not raw:
+        return ''
+    i = raw.find('#')
+    return raw[i + 1:] if i >= 0 else ''
 
 
 def parse_vless(raw_url):
@@ -607,7 +659,7 @@ def parse_vless(raw_url):
     }
 
 
-def parse_hysteria2(raw, fallback_name='🇭🇰 Hysteria2'):
+def parse_hysteria2(raw, fallback_name='node'):
     """解析 hysteria2:// 或 hy2:// 链接。支持端口跳跃: 单端口 / 端口段 a-b / 逗号混合。
 
     返回 dict: {type, name, address, port, server_ports, hop_interval,
@@ -812,6 +864,10 @@ def build_singbox(nodes, router_mode=False):
 
     return {
         'log': {'level': 'warn', 'timestamp': True},
+        # 1.14+: 远程规则集下载走直连(download_detour 已弃用, 1.16 移除)。⚠️ 不能写 'detour':'direct'
+        # —— 规则集下载发生在 outbound 初始化前, direct 还是空的, 会 fatal "detour to an empty
+        # direct outbound makes no sense"(同 DNS 坑, 实测复现); 不带 detour 的 http_client 默认即直连。
+        'http_clients': [{'tag': 'direct-client'}],
         'dns': {
             'servers': [
                 # 注意:1.12+ 里 DNS server 不带 detour 即默认走空 direct,显式写 'detour': 'direct' 会报
@@ -834,16 +890,17 @@ def build_singbox(nodes, router_mode=False):
         'outbounds': outbounds,
         'route': {
             'default_domain_resolver': 'dns-bootstrap',
+            'default_http_client': 'direct-client',
             'auto_detect_interface': True,
             'rules': route_rules,
             'rule_set': [{
                 'type': 'remote', 'tag': 'geosite-cn', 'format': 'binary',
                 'url': RULE_SERVER + '/sing/geosite/cn.srs',
-                'download_detour': 'direct', 'update_interval': '24h',
+                'update_interval': '24h',
             }, {
                 'type': 'remote', 'tag': 'geoip-cn', 'format': 'binary',
                 'url': RULE_SERVER + '/sing/geoip/cn.srs',
-                'download_detour': 'direct', 'update_interval': '24h',
+                'update_interval': '24h',
             }],
             'final': proxy_tag,
         },
@@ -987,6 +1044,298 @@ def build_clash(nodes):
     return NL.join(lines) + NL
 
 
+def _rules_rule_server_host():
+    try:
+        return urlparse(RULE_SERVER).hostname or ''
+    except Exception:
+        return ''
+
+
+def _literal_ip_cidr(address):
+    a = str(address or '').strip()
+    if re.match(r'^\d{1,3}(?:\.\d{1,3}){3}$', a):
+        return a + '/32'
+    if ':' in a:
+        return '[' + a + ']/128'
+    return None
+
+
+def _rules_sing_rule_sets():
+    """14 个远程规则集(9 geosite + 3 geoip + 2 special), 全走 mirror 自托管。"""
+    out = []
+    for name in RULES_META_GEOSITE:
+        if name in RULES_SING_SKIP_GEOSITE:
+            continue
+        out.append({'type': 'remote', 'tag': name, 'format': 'binary',
+                    'url': RULE_SERVER + '/sing/geosite/' + name + '.srs', 'update_interval': '24h'})
+    for name in RULES_META_GEOIP:
+        out.append({'type': 'remote', 'tag': 'geoip-' + name, 'format': 'binary',
+                    'url': RULE_SERVER + '/sing/geoip/' + name + '.srs', 'update_interval': '24h'})
+    for name in RULES_DUSTIN_SPECIAL:
+        out.append({'type': 'remote', 'tag': 'dw-' + name, 'format': 'binary',
+                    'url': RULE_SERVER + '/sing/special/' + name + '.srs', 'update_interval': '24h'})
+    return out
+
+
+def _rules_clash_providers():
+    """clash(mihomo) 的 mrs rule-providers: geosite 10 + geoip 3 + special 2 = 15。"""
+    out = []
+    for name in RULES_META_GEOSITE:
+        out.append((name, 'domain', RULE_SERVER + '/mihomo/geosite/' + name + '.mrs',
+                    './ruleset/' + name + '.mrs'))
+    for name in RULES_META_GEOIP:
+        out.append(('geoip-' + name, 'ipcidr', RULE_SERVER + '/mihomo/geoip/' + name + '.mrs',
+                    './ruleset/geoip-' + name + '.mrs'))
+    for name in RULES_DUSTIN_SPECIAL:
+        out.append(('dw-' + name, 'domain', RULE_SERVER + '/mihomo/special/' + name + '.mrs',
+                    './ruleset/dw-' + name + '.mrs'))
+    return out
+
+
+def build_singbox_rules(nodes, router_mode=False):
+    """规则集模式 sing-box: 复用 build_singbox 的骨架(outbounds/tun/DNS servers/http_clients/
+    experimental 全同), 只换 dns.rules / route.rules / route.rule_set 三段(顺序对齐 rule.worker.js)。
+    顺序铁律: private/dw-*-cn/apple 直连排最前 → google/microsoft/域名代理 → cn/geoip-cn 国内兜底 →
+    geolocation-!cn 境外兜底。"""
+    cfg = build_singbox(nodes, router_mode)
+    proxy_tag = 'proxy'
+    node_hosts = list(dict.fromkeys(n['address'] for n in nodes))  # 去重(双节点常同域)
+    node_ip_cidrs = [x for x in (_literal_ip_cidr(h) for h in node_hosts) if x]
+    bootstrap_hosts = [h for h in [_rules_rule_server_host()] + node_hosts if h]
+
+    dns_rules = [
+        {'clash_mode': 'direct', 'action': 'route', 'server': 'dns-direct'},
+        {'clash_mode': 'global', 'action': 'route', 'server': 'dns-proxy'},
+        {'domain': bootstrap_hosts, 'server': 'dns-bootstrap'},
+        {'rule_set': ['private'], 'server': 'dns-direct'},
+        {'rule_set': ['dw-microsoft-cn', 'dw-apple-cn'], 'server': 'dns-direct'},
+        {'rule_set': ['apple'], 'server': 'dns-direct'},
+        {'rule_set': ['google'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'rule_set': ['google'], 'server': 'dns-proxy'},
+        {'rule_set': ['microsoft'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'rule_set': ['microsoft'], 'server': 'dns-proxy'},
+    ]
+    for rs in RULES_PROXY_DOMAIN_SETS:
+        dns_rules.append({'rule_set': rs, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'})
+    for rs in RULES_PROXY_DOMAIN_SETS:
+        dns_rules.append({'rule_set': rs, 'server': 'dns-proxy'})
+    dns_rules += [
+        {'rule_set': ['cn'], 'server': 'dns-direct'},
+        {'rule_set': ['geolocation-!cn'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'rule_set': ['geolocation-!cn'], 'server': 'dns-proxy'},
+    ]
+
+    route_rules = [
+        {'action': 'sniff'},
+        {'clash_mode': 'direct', 'outbound': 'direct'},
+        {'clash_mode': 'global', 'outbound': proxy_tag},
+        {'protocol': 'dns', 'action': 'hijack-dns'},
+        {'domain': bootstrap_hosts, 'outbound': 'direct'},
+    ]
+    if node_ip_cidrs:
+        route_rules.append({'ip_cidr': node_ip_cidrs, 'outbound': 'direct'})
+    route_rules += [
+        {'rule_set': ['private'], 'outbound': 'direct'},
+        {'rule_set': ['dw-microsoft-cn', 'dw-apple-cn'], 'outbound': 'direct'},
+        {'rule_set': ['apple'], 'outbound': 'direct'},
+        {'rule_set': ['geoip-private'], 'outbound': 'direct'},
+        {'rule_set': ['google'], 'outbound': proxy_tag},
+        {'rule_set': ['microsoft'], 'outbound': proxy_tag},
+    ]
+    for rs in RULES_PROXY_DOMAIN_SETS:
+        route_rules.append({'rule_set': rs, 'outbound': proxy_tag})
+    route_rules += [
+        {'rule_set': ['geoip-telegram'], 'outbound': proxy_tag},
+        {'rule_set': ['cn'], 'outbound': 'direct'},
+        {'rule_set': ['geoip-cn'], 'outbound': 'direct'},
+        {'rule_set': ['geolocation-!cn'], 'outbound': proxy_tag},
+        {'ip_is_private': True, 'outbound': 'direct'},
+    ]
+
+    cfg['dns']['rules'] = dns_rules
+    cfg['route']['rules'] = route_rules
+    cfg['route']['rule_set'] = _rules_sing_rule_sets()
+    return cfg
+
+
+def build_clash_rules(nodes):
+    """规则集模式 clash: 复用 build_clash 的骨架(节点/组/DNS 段逐字节同), 把结尾 rules: 段替换为
+    rule-providers(mrs) + RULE-SET 规则。"""
+    q = lambda s: json.dumps(str(s), ensure_ascii=False)
+    lines = build_clash(nodes).rstrip(NL).split(NL)
+    out = lines[:lines.index('rules:')] + ['rule-providers:']
+    for name, behavior, url, path in _rules_clash_providers():
+        out += ['  ' + q(name) + ':',
+                '    type: http',
+                '    behavior: ' + behavior,
+                '    format: mrs',
+                '    url: ' + q(url),
+                '    path: ' + q(path),
+                '    interval: 86400']
+    rules = ['RULE-SET,category-ads-all,REJECT',
+             'RULE-SET,private,DIRECT',
+             'RULE-SET,dw-microsoft-cn,DIRECT',
+             'RULE-SET,dw-apple-cn,DIRECT',
+             'RULE-SET,apple,DIRECT']
+    for name in ['google', 'github', 'openai', 'microsoft', 'telegram', 'geoip-telegram']:
+        rules.append('RULE-SET,' + name + ',PROXY')
+    rules += ['RULE-SET,cn,DIRECT',
+              'RULE-SET,geoip-cn,DIRECT',
+              'RULE-SET,geoip-private,DIRECT',
+              'RULE-SET,geolocation-!cn,PROXY',
+              'MATCH,PROXY']
+    out.append('rules:')
+    for r in rules:
+        out.append('  - ' + q(r))
+    return NL.join(out) + NL
+
+
+def _sr_node_line(node):
+    """Shadowrocket conf 节点行。hysteria2 只能注释(conf 表达不了端口跳跃/auth 语义, 实测导入会断网),
+    vless(Reality) 正常注入。与 CF worker sub-rules 的 shadowrocketNodeLine 逐字对齐。"""
+    name = re.sub(r'[,\r\n]', '', str(node.get('name') or 'node'))
+    if node.get('type') == 'hysteria2':
+        line = '# ' + name + ' = hysteria2,' + str(node['address']) + ',' + str(node.get('port')) + ',auth=' + str(node.get('password'))
+        if node.get('obfs') and node.get('obfs_password'):
+            line += ',obfsParam=' + str(node['obfs']) + ':' + str(node['obfs_password'])
+        alpn = (node.get('alpn') or ['h3'])[0] or 'h3'
+        peer = node.get('sni') or node['address']
+        line += ',udp=1,peer=' + str(peer) + ',alpn=' + str(alpn)
+        if node.get('insecure'):
+            line += ',allowInsecure=1'
+        return line
+    if node.get('type') == 'vless' or node.get('uuid'):
+        line = name + ' = vless,' + str(node['address']) + ',' + str(node.get('port')) + \
+               ',password=' + str(node.get('uuid')) + ',encryption=none,udp=1'
+        peer = node.get('sni') or node['address']
+        flow = (',flow=' + str(node['flow'])) if node.get('flow') else ''
+        line += ',tls=true,peer=' + str(peer) + flow
+        return line
+    return None
+
+
+def _sr_clean_conf(conf):
+    """去全部 # 注释行与空行(Section 之间保留一个空行) —— 与 worker cleanConf 同语义。"""
+    out = []
+    for raw in str(conf or '').split('\n'):
+        t = raw.strip()
+        if t == '' or t.startswith('#'):
+            continue
+        if t.startswith('[') and out and out[-1] != '':
+            out.append('')
+        out.append(raw)
+    while out and out[-1] == '':
+        out.pop()
+    return '\n'.join(out) + '\n'
+
+
+def _sr_fetch_lazy():
+    """拉 John Shall lazy.conf; 10 秒超时, 失败返回 None(调用方退回最小可用配置)。"""
+    try:
+        req = urllib.request.Request(SHADOWROCKET_LAZY_CONF, headers={'User-Agent': 'subconverter/5.2'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode('utf-8', 'replace')
+    except Exception:
+        return None
+
+
+_sr_cache = {'stamp': None, 'ts': 0.0, 'body': None}
+
+
+def get_shadowrocket(c, raw=False):
+    """小火箭规则配置(旁路, 按需生成 + 1 小时缓存)。
+    clean(默认): lazy.conf 去注释纯规则版, [Proxy] 保持空段(节点由 base64 订阅导入);
+    raw=1: lazy.conf 逐字节原样 + 在 [Proxy] 空段注入节点行(vless 注入 / hysteria2 注释)。
+    拉不到上游时退回最小配置(节点 + FINAL,PROXY), 保证客户端永远有可用的东西。"""
+    stamp = (c.get('mtime', 0), bool(raw))
+    if _sr_cache.get('stamp') == stamp and _sr_cache.get('body') is not None \
+            and (time.time() - _sr_cache.get('ts', 0.0)) < SHADOWROCKET_CACHE_TTL:
+        return _sr_cache['body']
+
+    node_lines = []
+    if c.get('raw_hy2'):
+        node_lines.append(_sr_node_line(parse_hysteria2(c['raw_hy2'], 'HY2')))
+    if c.get('raw_vless'):
+        v = parse_vless(c['raw_vless'])
+        v['name'] = c.get('node_name') or 'node'
+        node_lines.append(_sr_node_line(v))
+    node_lines = [x for x in node_lines if x]
+
+    body = None
+    lazy = _sr_fetch_lazy()
+    if lazy:
+        if not raw:
+            body = _sr_clean_conf(lazy)
+        else:
+            marker = '[Proxy]'
+            idx = lazy.find(marker)
+            if idx >= 0:
+                line_end = lazy.find('\n', idx)
+                inject_at = line_end + 1 if line_end >= 0 else len(lazy)
+                body = lazy[:inject_at] + '\n'.join(node_lines) + '\n' + lazy[inject_at:]
+            else:
+                body = lazy
+    if body is None:
+        minimal = '\n'.join(['[General]', 'dns-server = system', '[Proxy]'] + node_lines +
+                            ['[Rule]', 'FINAL,PROXY']) + '\n'
+        body = _sr_clean_conf(minimal) if not raw else minimal
+
+    _sr_cache['stamp'] = stamp
+    _sr_cache['ts'] = time.time()
+    _sr_cache['body'] = body
+    return body
+
+
+def _load_nodes_for_rules():
+    """规则集模式的节点解析。刻意重复 get_configs() 的解析逻辑而不去改它 —— 硬编码老路径冻结。"""
+    with open(CONFIG_PATH) as f:
+        raw = json.load(f)
+    raw_vless = raw.get('rawVlessUrl', '').strip()
+    raw_hy2 = raw.get('rawHy2Url', '').strip()
+    name = raw.get('nodeName') or _url_fragment(raw_vless) or 'node'
+    nodes = []
+    if raw_vless:
+        if not raw_vless.startswith('vless://'):
+            raise ValueError('config.json 的 rawVlessUrl 不是 vless:// 开头')
+        v = parse_vless(raw_vless)
+        v['name'] = name
+        nodes.append(v)
+    if raw_hy2:
+        if not (raw_hy2.startswith('hysteria2://') or raw_hy2.startswith('hy2://')):
+            raise ValueError('config.json 的 rawHy2Url 不是 hysteria2:// 或 hy2:// 开头')
+        nodes.append(parse_hysteria2(raw_hy2, raw.get('hy2NodeName') or 'node'))
+    if not nodes:
+        raise ValueError('config.json 需要 rawVlessUrl 和/或 rawHy2Url (至少一个)')
+    return nodes
+
+
+def _want_rules_mode(path, qs):
+    """规则集模式入口: 路径 /rules 或 ?mode=rules。"""
+    p = path.split('?', 1)[0].rstrip('/')
+    if p == '/rules':
+        return True
+    return (qs.get('mode', [''])[0] or '').lower() == 'rules'
+
+
+def get_configs_rules():
+    """规则集模式配置(旁路)。返回与 get_configs() 同键的 dict, 只把 singbox/singbox_router/clash
+    换成规则集版; raw_vless/raw_hy2 原样透传 → base64 订阅节点不变。生成失败直接抛异常,
+    由 do_GET 的 except 兜底成 500, 不影响硬编码老链接。"""
+    c = get_configs()
+    mtime = c.get('mtime', 0)
+    if _cache.get('rules_mtime') == mtime and _cache.get('rules_singbox'):
+        return dict(c, singbox=_cache['rules_singbox'],
+                    singbox_router=_cache['rules_singbox_router'], clash=_cache['rules_clash'])
+    nodes = _load_nodes_for_rules()
+    _cache['rules_mtime'] = mtime
+    _cache['rules_singbox'] = json.dumps(build_singbox_rules(nodes), indent=2, ensure_ascii=False)
+    _cache['rules_singbox_router'] = json.dumps(build_singbox_rules(nodes, router_mode=True),
+                                                indent=2, ensure_ascii=False)
+    _cache['rules_clash'] = build_clash_rules(nodes)
+    return dict(c, singbox=_cache['rules_singbox'],
+                singbox_router=_cache['rules_singbox_router'], clash=_cache['rules_clash'])
+
+
 def get_configs():
     try:
         mtime = os.path.getmtime(CONFIG_PATH)
@@ -997,7 +1346,7 @@ def get_configs():
             raw = json.load(f)
         raw_vless = raw.get('rawVlessUrl', '').strip()
         raw_hy2 = raw.get('rawHy2Url', '').strip()
-        name = raw.get('nodeName', '🇯🇵 Osaka')
+        name = raw.get('nodeName') or _url_fragment(raw_vless) or 'node'
         nodes = []
         if raw_vless:
             if not raw_vless.startswith('vless://'):
@@ -1008,7 +1357,7 @@ def get_configs():
         if raw_hy2:
             if not (raw_hy2.startswith('hysteria2://') or raw_hy2.startswith('hy2://')):
                 raise ValueError('config.json 的 rawHy2Url 不是 hysteria2:// 或 hy2:// 开头')
-            nodes.append(parse_hysteria2(raw_hy2, raw.get('hy2NodeName', '🇭🇰 Hysteria2')))
+            nodes.append(parse_hysteria2(raw_hy2, raw.get('hy2NodeName') or 'node'))
         if not nodes:
             raise ValueError('config.json 需要 rawVlessUrl 和/或 rawHy2Url (至少一个)')
         _cache['mtime'] = mtime
@@ -1040,6 +1389,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # /health
             if self.path == '/health':
                 self._respond(200, 'OK', 'text/plain')
+                return
+
+            # ── 规则集模式(旁路, 2026-09-11): /rules 或 ?mode=rules ──
+            # c = get_configs() 已在上面按老路径跑完; 这里只把配置对象换成规则集版, 老链接行为不变。
+            if _want_rules_mode(self.path, qs):
+                c = get_configs_rules()
+
+            # ── 小火箭(Shadowrocket)规则配置(旁路, 2026-09-11): ?target=conf / shadowrocket ──
+            # 与模式无关(两条链接都能用); ?raw=1 返回原样+注入节点行。拉不到上游会自动退回最小配置。
+            if target in ('conf', 'shadowrocket'):
+                self._respond(200, get_shadowrocket(c, raw=(qs.get('raw', [''])[0] == '1')), 'text/plain')
                 return
 
             # sing-box (router=1 输出 auto_redirect + system 栈, 与 new.worker.js 对齐)

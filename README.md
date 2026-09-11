@@ -23,16 +23,35 @@
 
 把 VLESS / Hysteria2 节点链接转换成各客户端可用的订阅配置，按客户端 User-Agent 自动返回：
 
-- **sing-box**（JSON）/ **Clash / Mihomo**（YAML）/ **v2rayN**（Base64）
+- **sing-box**（JSON）/ **Clash / Mihomo**（YAML）/ **v2rayN**（Base64）/ **Shadowrocket 规则配置**
 - 菜单式节点选择：仅 VLESS / 仅 HY2 / 双节点 / **自动检测**（读 `/etc/sing-box/config.json`）
 - Hysteria2 **端口跳跃**支持（如 `20000-30000`），自动生成 `hop_interval`
+- **两种分流可选**：默认「域名硬编码表」；链接后加 `?mode=rules` 即切换「规则集模式」（域名分流交给自托管规则集，跟随上游自动更新，本地不写死域名）
 - HTTP + HTTPS 双端点；真证书（certbot 自动申请）/ 自签证书双模式
 - Python 零依赖（系统自带 python3 + nginx），无需 Node.js
 - 支持命令行直接传节点链接跳过交互菜单
+- 部署完成自动打印：订阅链接、`?mode=rules` 链接、小火箭规则配置链接（**探测不到就静默不打印**，不会影响部署）
 
 ```bash
 curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh && sudo bash /tmp/setup.sh
 ```
+
+### 客户端怎么用（含 Shadowrocket / 小火箭）
+
+部署完会打印一个**随机路径**的订阅地址（防扫描），下面用 `<订阅>` 代指它：
+
+| 客户端 | 用哪条 | 说明 |
+|--------|--------|------|
+| sing-box / SFI / SFA / SFM | `<订阅>` | 按 UA 自动返回 JSON；`&router=1` 出路由器版（auto_redirect + system 栈） |
+| Clash / Mihomo / Stash / Clash Verge | `<订阅>` | 按 UA 自动返回 YAML |
+| v2rayN 等通用客户端 | `<订阅>` | 返回 Base64 订阅（VLESS + Hysteria2） |
+| **小火箭 · 节点订阅** | `<订阅>` | **必须用这条导入节点**：Hysteria2 只能走 URI 订阅（conf 的节点行表达不了端口跳跃/认证语义） |
+| **小火箭 · 规则配置** | `<订阅>?target=conf` | 规则配置（去注释干净版）；`&raw=1` 拿带注释的原版 |
+
+**小火箭的正确用法 = 两条链接**：节点订阅用 `<订阅>`，规则配置用 `<订阅>?target=conf`。
+（小火箭用 URL 最后一段当配置名，两条分开导入、互不影响；不要拿 conf 当节点订阅用。）
+
+**想要规则集版分流**：把上面两条里的 `<订阅>` 换成 `<订阅>?mode=rules` 即可，节点完全一样，只是分流规则来自规则集。
 
 ## ② VPS 节点一键部署（hy2.sh）
 

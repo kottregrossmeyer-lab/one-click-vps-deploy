@@ -805,6 +805,35 @@ else
   echo -e "  ${GREEN}📥 订阅地址${NC} ${YELLOW}(填入客户端, 自动识别格式)${NC}:"
   echo -e "    ${MAGENTA}${BOLD}$BASE_URL/$B64PATH${NC}"
 fi
+
+# ---------- 12.5 规则集模式链接(旁路) ----------
+# 用 ?mode=rules 走同一个随机路径, 不新增 nginx location(老配置一行不动)。
+# 只有本机真实探测返回 200 才打印; 不支持/生成失败就静默跳过 —— 绝不影响上面两条老链接, 也绝不让脚本失败。
+RULES_CODE=$(curl -sk --max-time 6 -o /dev/null -w "%{http_code}" -A "sing-box/1.9" \
+  "https://127.0.0.1:$WEB_PORT/$B64PATH?mode=rules" 2>/dev/null || true)
+if [ "$RULES_CODE" = "200" ]; then
+  echo ""
+  echo -e "  ${GREEN}🧩 规则集模式订阅${NC} ${YELLOW}(零硬编码: 域名走自托管规则集, 自动更新)${NC}:"
+  if [ "$MODE" = "2" ]; then
+    echo -e "    HTTP : ${MAGENTA}${BOLD}$BASE_URL_HTTP/$B64PATH?mode=rules${NC}"
+    echo -e "    HTTPS: ${MAGENTA}${BOLD}$BASE_URL/$B64PATH?mode=rules${NC}"
+  else
+    echo -e "    ${MAGENTA}${BOLD}$BASE_URL/$B64PATH?mode=rules${NC}"
+  fi
+  echo -e "    ${YELLOW}(与上面同节点, 只是分流规则换成规则集版; 想换回硬编码版就用上面的链接)${NC}"
+fi
+
+# ---------- 12.6 小火箭规则配置链接(旁路) ----------
+# 同样只在真实探测 200 时打印; 失败静默跳过。conf 与模式无关(两种链接都能配), 所以只打一条。
+if [ "$MODE" = "2" ]; then SR_BASE="$BASE_URL_HTTP"; else SR_BASE="$BASE_URL"; fi
+SR_CODE=$(curl -sk --max-time 6 -o /dev/null -w "%{http_code}" \
+  "$SR_BASE/$B64PATH?target=conf" 2>/dev/null || true)
+if [ "$SR_CODE" = "200" ]; then
+  echo ""
+  echo -e "  ${GREEN}📱 小火箭(Shadowrocket)规则配置${NC}:"
+  echo -e "    ${MAGENTA}${BOLD}$SR_BASE/$B64PATH?target=conf${NC}"
+  echo -e "    ${YELLOW}(小火箭要两条: 节点用上面的订阅链接导入, 规则用这条 conf; 加 &raw=1 拿带注释原版)${NC}"
+fi
 echo ""
 echo -e "  ${CYAN}支持客户端:${NC}"
 echo -e "    ${BLUE}- sing-box / SFI / SFA${NC} -> 自动返回 JSON 配置"
