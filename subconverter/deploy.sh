@@ -764,30 +764,43 @@ if [ "$PM" = "dnf" ] || [ "$PM" = "yum" ]; then
 fi
 
 # ---------- 11. 自检 ----------
+# ⚠️ 2026-09-14 修「脚本不打印最后的订阅链接就直接退到 shell」:
+#   ① 本脚本是 set -euo pipefail, 而 `CHK=$(curl ...)` 是**简单命令** —— curl 连不上时退出码非 0
+#      (连接被拒=7), errexit 会让脚本**当场无声退出**, 下面那个 [X] 兜底提示根本没机会打印。
+#      实测后果: 日志停在 "[OK] HTTPS 端点正常" 就没了, 既没有 [X] 也没有第 12 步的链接,
+#      看起来像"凭空断了"。→ 三处 curl 全部加 `|| true` 兜住退出码, 交给 if 去判, 诊断才打得出来。
+#   ② HTTP 端点只有 MODE=2(公网 IP) 才建 —— 见上面 `case "$MODE" in 2)` 才有 `listen $HTTP_PORT`,
+#      MODE=1|3(域名) 只有 `listen 80` + `listen $WEB_PORT ssl`。原来这里**无条件**去探 HTTP 端点,
+#      于是域名模式 100% "自检失败"、白死在自检上, 第 12 步的链接永远不输出。→ 加 MODE=2 门控,
+#      与下面输出段的口径对齐。
 echo ""
 echo -e "${CYAN}[10]${NC} 自检..."
 BASE_URL="https://${DOMAIN:-$PUBIP}:${WEB_PORT}"
 BASE_URL_HTTP="http://${DOMAIN:-$PUBIP}:${HTTP_PORT}"
 
-CHK=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" -A "sing-box/1.9" "https://127.0.0.1:$WEB_PORT/$B64PATH")
+CHK=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" -A "sing-box/1.9" "https://127.0.0.1:$WEB_PORT/$B64PATH" || true)
 if [ "$CHK" = "200" ]; then
   echo "   [OK] HTTPS 端点正常 (HTTP $CHK)"
 else
-  echo "   [X] HTTPS 自检失败 (HTTP $CHK), 订阅不可用, 部署中止" >&2
+  echo "   [X] HTTPS 自检失败 (HTTP ${CHK:-000}), 订阅不可用, 部署中止" >&2
   echo "      (排查: systemctl status nginx / subconverter, journalctl -u subconverter -n 20)" >&2
   exit 1
 fi
 
-CHK2=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" -A "sing-box/1.9" "http://127.0.0.1:$HTTP_PORT/$B64PATH")
-if [ "$CHK2" = "200" ]; then
-  echo "   [OK] HTTP 端点正常 (HTTP $CHK2)"
+if [ "$MODE" = "2" ]; then
+  CHK2=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" -A "sing-box/1.9" "http://127.0.0.1:$HTTP_PORT/$B64PATH" || true)
+  if [ "$CHK2" = "200" ]; then
+    echo "   [OK] HTTP 端点正常 (HTTP $CHK2)"
+  else
+    echo "   [X] HTTP 自检失败 (HTTP ${CHK2:-000}), 订阅不可用, 部署中止" >&2
+    exit 1
+  fi
 else
-  echo "   [X] HTTP 自检失败 (HTTP $CHK2), 订阅不可用, 部署中止" >&2
-  exit 1
+  echo "   [--] HTTP 端点: 域名模式不建 HTTP 订阅(只用 HTTPS), 跳过自检"
 fi
 
-CHK404=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" "https://127.0.0.1:$WEB_PORT/")
-[ "$CHK404" = "404" ] && echo "   [OK] 其他路径返回 404, 防扫描生效" || echo "   [注意] 其他路径返回 $CHK404"
+CHK404=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" "https://127.0.0.1:$WEB_PORT/" || true)
+[ "$CHK404" = "404" ] && echo "   [OK] 其他路径返回 404, 防扫描生效" || echo "   [注意] 其他路径返回 ${CHK404:-000}"
 
 # ---------- 12. 输出 ----------
 echo ""
@@ -850,7 +863,10 @@ fi
 echo ""
 echo -e "  ${YELLOW}⚠️  请务必到云控制台安全组放行以下端口:${NC}"
 echo -e "      ${BLUE}TCP $WEB_PORT${NC}   [HTTPS 订阅]"
-echo -e "      ${BLUE}TCP $HTTP_PORT${NC}  [HTTP 订阅]"
+# HTTP 端点只有 MODE=2 才建(域名模式只用 HTTPS) —— 别让用户去放行一个没人监听的端口(2026-09-14)
+if [ "$MODE" = "2" ]; then
+  echo -e "      ${BLUE}TCP $HTTP_PORT${NC}  [HTTP 订阅]"
+fi
 if [ "$MODE" = "1" ] || [ "$MODE" = "3" ] || { [ "$MODE" = "2" ] && [ "$REAL_OK" = "1" ]; }; then
   echo -e "      ${BLUE}TCP 80${NC}          [证书申请/续期]"
 fi
