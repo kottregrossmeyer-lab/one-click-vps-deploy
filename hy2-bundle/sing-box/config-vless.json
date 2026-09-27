@@ -17,11 +17,11 @@
       ],
       "tls": {
         "enabled": true,
-        "server_name": "www.bing.com",
+        "server_name": "www.microsoft.com",
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "www.bing.com",
+            "server": "www.microsoft.com",
             "server_port": 443
           },
           "private_key": "CHANGE_ME_PRIVATE_KEY",

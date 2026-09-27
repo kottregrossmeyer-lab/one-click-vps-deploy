@@ -519,13 +519,42 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 log_progress "  [OK] 基础环境就绪 (nginx + $PYTHON_BIN)"
 
+# nginx 运行目录兜底(2026-09-28): 精简镜像/云主机常缺 /var/log/nginx, 于是 nginx 起不来并报
+#   nginx: [emerg] open() "/var/log/nginx/error.log" failed (2: No such file or directory)
+# 目录缺 ≠ 环境坏 —— 这里只**按需补建 + 给 nginx 用户属主**, 补齐后继续, 不退出。
+NGINX_RUN_USER=""
+if id -u nginx >/dev/null 2>&1; then NGINX_RUN_USER=nginx
+elif id -u www-data >/dev/null 2>&1; then NGINX_RUN_USER=www-data
+fi
+ensure_nginx_dirs() {
+  local d
+  for d in /var/log/nginx /var/lib/nginx /var/lib/nginx/tmp /var/cache/nginx /run/nginx; do
+    [ -d "$d" ] && continue
+    if mkdir -p "$d" 2>/dev/null; then
+      log_progress "  [OK] 补建缺失目录 $d"
+      [ -n "$NGINX_RUN_USER" ] && chown -R "$NGINX_RUN_USER:$NGINX_RUN_USER" "$d" 2>/dev/null || true
+    fi
+  done
+  return 0
+}
+ensure_nginx_dirs
+
 # 启动 nginx
 log_progress "  -> 启动 nginx..."
 systemctl enable --now nginx >/dev/null 2>&1 || true
 sleep 1
 if ! systemctl is-active nginx >/dev/null 2>&1; then
+  # 起不来先按最常见的"运行目录缺失"兜一次, 再判定失败
+  log_progress "  -> nginx 未起来, 补建运行目录后重试一次..."
+  ensure_nginx_dirs
+  systemctl restart nginx >/dev/null 2>&1 || true
+  sleep 1
+fi
+if ! systemctl is-active nginx >/dev/null 2>&1; then
   echo "[X] nginx 启动失败, 日志如下:" >&2
   journalctl -u nginx -n 15 --no-pager >&2 2>&1 || true
+  echo "    提示: 若日志里是 open() \"/var/log/nginx/...\" failed, 说明该镜像缺目录(本脚本已自动补建);" >&2
+  echo "          仍失败请把上面几行日志发给作者。" >&2
   echo "[X] 部署中止 (nginx 未运行, 订阅无法工作)" >&2
   exit 1
 fi
@@ -698,6 +727,7 @@ EOF
     ;;
 esac
 
+ensure_nginx_dirs   # 写配置后重启前再兜一次(同"缺目录"问题, 免得 nginx -t 就读不到 error_log)
 nginx -t && systemctl restart nginx 2>/dev/null || true
 sleep 1
 if ! systemctl is-active nginx >/dev/null 2>&1; then

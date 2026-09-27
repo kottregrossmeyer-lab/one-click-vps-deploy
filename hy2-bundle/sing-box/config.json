@@ -28,7 +28,7 @@
       },
       "masquerade": {
         "type": "proxy",
-        "url": "https://www.bing.com",
+        "url": "https://www.microsoft.com",
         "rewrite_host": true
       }
     }

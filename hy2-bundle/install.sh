@@ -116,8 +116,8 @@ fi
 if [[ "$PROTO" == "2" ]]; then
     NODE_UUID=$(cat /proc/sys/kernel/random/uuid)
     echo "已生成 VLESS UUID: $NODE_UUID"
-    read -p "Reality 目标网站 (${YELLOW}回车=www.bing.com${NC}): " REALITY_TARGET
-    REALITY_TARGET=${REALITY_TARGET:-www.bing.com}
+    read -p "Reality 目标网站 (${YELLOW}回车=www.microsoft.com${NC}): " REALITY_TARGET
+    REALITY_TARGET=${REALITY_TARGET:-www.microsoft.com}
     REALITY_SID=$(openssl rand -hex 4)
     echo "已生成 Reality short_id: $REALITY_SID"
 else
