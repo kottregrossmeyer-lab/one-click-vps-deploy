@@ -9,6 +9,19 @@
 # ============================================================
 set -euo pipefail
 
+# ── 权限检测(2026-09-28): 是 root 就直接跑, 不是 root 才用 sudo ──
+# 老版本最后一行写死 `sudo bash deploy.sh` —— 在没装 sudo 的精简系统(root 直登的容器/VPS)上
+# 会以 "line 52: sudo: command not found" 炸掉。现在两者都行, 两者都没有就**当场**给明确提示。
+if [ "$(id -u)" -eq 0 ]; then
+  SUDO=""
+elif command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+else
+  echo "[X] 需要 root 权限: 当前不是 root, 系统里也没有 sudo。" >&2
+  echo "    请切到 root 后重跑:  su -   然后  bash /tmp/setup.sh" >&2
+  exit 1
+fi
+
 URL="${BASE_URL:-https://mirror.notebase.cn/download}"
 
 echo "=============================================="
@@ -49,4 +62,4 @@ else
   echo "    [4] 部署完成自动打印 HTTP+HTTPS 双订阅地址"
 fi
 echo "------------------------------------------------"
-sudo bash deploy.sh "$@"
+${SUDO} bash deploy.sh "$@"    # root 时 SUDO 为空 = 直接跑; 非 root 才套 sudo

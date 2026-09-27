@@ -698,10 +698,12 @@ echo -e "${GREEN}>> 正在拉取并执行订阅配置脚本...${NC}"
   rm -rf /tmp/setup.sh
   if curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh; then
     # setup.sh 只认位置参数 $1(不读 SUB_LINK 环境变量),按前缀自动识别协议
+    # ⚠️ 本脚本开头已校验 EUID=0, 这里**不要再套 sudo**: 精简系统/root 直登的机器上
+    # 可能根本没装 sudo, 套了会以 "sudo: command not found" 断在这一步(setup.sh 自己会处理权限)。
     if [[ -n "$SHARE_LINK" ]]; then
-      sudo bash /tmp/setup.sh "$SHARE_LINK"
+      bash /tmp/setup.sh "$SHARE_LINK"
     else
-      sudo bash /tmp/setup.sh
+      bash /tmp/setup.sh
     fi
   else
     echo "!! 订阅脚本下载失败，跳过此步" >&2

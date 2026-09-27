@@ -32,6 +32,7 @@ NC=$'\033[0m'
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "[X] 请用 root 运行:  sudo bash deploy.sh"
+  echo "    (系统里没有 sudo 的话: su - 切到 root 后重跑本脚本)"
   exit 1
 fi
 
