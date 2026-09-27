@@ -19,10 +19,23 @@ NC=$'\033[0m'
 
 # ========== 发行版检测 ==========
 OS_ID=$(grep -E '^ID=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
+OS_LIKE=$(grep -E '^ID_LIKE=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
 case "$OS_ID" in
     debian|ubuntu) OS_FAMILY="debian"; ADMIN_GROUP="sudo" ;;
     rhel|almalinux|rocky|ol|centos|fedora) OS_FAMILY="rhel"; ADMIN_GROUP="wheel" ;;
-    *) echo "不支持的系统: ${OS_ID:-未知}" >&2; exit 1 ;;
+    *)
+        # ID 不在名单里 → 按 ID_LIKE 归族(2026-09-28)。RHEL 衍生版(os-release 里 ID_LIKE="rhel fedora",
+        # 如 openEuler/anoli/alinux)以前会被直接判"不支持", 但它们跟 RHEL 9 系没区别 —— 放行。
+        case " ${OS_LIKE} " in
+            *" debian "*|*" ubuntu "*) OS_FAMILY="debian"; ADMIN_GROUP="sudo" ;;
+            *" rhel "*|*" fedora "*|*" centos "*) OS_FAMILY="rhel"; ADMIN_GROUP="wheel" ;;
+            *)
+                echo "不支持的系统: ${OS_ID:-未知} (ID_LIKE=${OS_LIKE:-无})" >&2
+                echo "  支持: Debian/Ubuntu 系 与 RHEL 系(含 ID_LIKE 声明 rhel/fedora 的衍生版, 如 openEuler)。" >&2
+                exit 1 ;;
+        esac
+        echo -e "${YELLOW}>> 注意: ${OS_ID} 不在已验证列表, 按 ID_LIKE(\"${OS_LIKE}\") 当作 ${OS_FAMILY} 系继续 —— 遇到问题请自行排查${NC}"
+        ;;
 esac
 echo -e "${CYAN}>> 系统: ${OS_ID} (${OS_FAMILY} 系)${NC}"
 
