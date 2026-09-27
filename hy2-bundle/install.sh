@@ -120,26 +120,37 @@ input_port() {
 }
 
 # ── 节点名自动检测国家(2026-09-28) ──
-# 依次试三个免费接口, 取"英文国家名"; **任何一个失败/结果不可信都只是回退, 绝不退出脚本**。
-# 校验: 结果只允许 字母/空格/点/连字符 且 ≤40 字符 —— 防的是运营商劫持页、限流 JSON、
-# 错误页被当成节点名写进配置(那种名字比 node 更糟, 而且会被写进订阅链接)。
+# 🔴 教训(09-28 当天就被用户抓到): **单一数据源不可信** —— 实测 `ifconfig.co` 把一台日本 IP 判成
+# "United States"(同一台机器上 ip-api 和 ipinfo 都判 JP)。所以改成**三个源各给国家码, 取多数**。
+# 名字优先用"与胜出码一致"的那份英文名, 拿不到就用国家码本身(如 JP)。
+# 任何一个源超时/返回垃圾都只是少一票; **三票全挂则回退 node** —— 绝不退出脚本。
 detect_country_name() {
-    local s=""
-    s=$(curl -s -m 6 https://ifconfig.co/country 2>/dev/null) || s=""
-    if [[ -z "${s//[[:space:]]/}" ]]; then
-        s=$(curl -s -m 6 "http://ip-api.com/json/?fields=country" 2>/dev/null) || s=""
-        s=$(printf '%s' "$s" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-    fi
-    if [[ -z "${s//[[:space:]]/}" ]]; then
-        s=$(curl -s -m 6 https://ipinfo.io/country 2>/dev/null) || s=""   # 只给国家码, 最后兜底
-    fi
-    s=$(printf '%s' "$s" | tr -d '\r\n' | tr -s ' ' | sed 's/^ *//; s/ *$//')
-    case "$s" in
+    local a b c ca cb cc code nm
+    a=$(curl -s -m 6 "http://ip-api.com/json/?fields=country,countryCode" 2>/dev/null) || a=""
+    b=$(curl -s -m 6 https://ipinfo.io/country 2>/dev/null) || b=""
+    c=$(curl -s -m 6 https://ifconfig.co/country-iso 2>/dev/null) || c=""
+    ca=$(printf '%s' "$a" | sed -n 's/.*"countryCode"[[:space:]]*:[[:space:]]*"\([A-Za-z][A-Za-z]\)".*/\1/p' | tr 'a-z' 'A-Z')
+    cb=$(printf '%s' "$b" | tr -d '\r\n[:space:]' | tr 'a-z' 'A-Z')
+    cc=$(printf '%s' "$c" | tr -d '\r\n[:space:]' | tr 'a-z' 'A-Z')
+    case "$cb" in [A-Z][A-Z]) ;; *) cb="" ;; esac
+    case "$cc" in [A-Z][A-Z]) ;; *) cc="" ;; esac
+    # 三票取多数; 无多数(或不足三票)时按 ip-api > ipinfo > ifconfig 取第一个有效的
+    if   [[ -n "$ca" && ( "$ca" == "$cb" || "$ca" == "$cc" ) ]]; then code="$ca"
+    elif [[ -n "$cb" && "$cb" == "$cc" ]]; then code="$cb"
+    else code="${ca:-${cb:-$cc}}"; fi
+    [[ -n "$code" ]] || { printf ''; return 0; }
+    # 英文名: 只有当 ip-api 的码就是胜出码时才用它的名字, 否则退回用国家码
+    nm=$(printf '%s' "$a" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [[ "$ca" == "$code" ]] || nm="$code"
+    [[ -n "$nm" ]] || nm="$code"
+    nm=$(printf '%s' "$nm" | tr -d '\r\n' | tr -s ' ' | sed 's/^ *//; s/ *$//')
+    case "$nm" in
         ''|*[!A-Za-z\ .-]*) printf ''; return 0 ;;   # 含非白名单字符 → 视为不可信, 丢弃
     esac
-    [ "${#s}" -gt 40 ] && { printf ''; return 0; }
-    printf '%s' "$s"
+    [ "${#nm}" -gt 40 ] && { printf ''; return 0; }
+    printf '%s' "$nm"
 }
+
 
 # 端口提示按协议区分: HY2 问监听+跳跃结束两个口; VLESS 只问监听
 if [[ "$PROTO" == "2" ]]; then
