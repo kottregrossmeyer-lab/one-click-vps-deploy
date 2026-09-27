@@ -28,6 +28,7 @@ URL="${BASE_URL:-https://mirror.notebase.cn/download}"
 echo "=============================================="
 echo "   订阅转换服务 · 自动部署"
 echo "=============================================="
+echo "[提示] 较老的系统(如 Debian 9 / Ubuntu 18 / CentOS 7-8 等已 EOL 的发行版)可能在装包阶段报错 —— 多为软件源已下线所致, 请自行排查; 建议 Debian 11+ / Ubuntu 20.04+ / RHEL 9 系。"
 
 echo "[1/3] 下载部署包 (15KB, 国内1-3秒 / 海外可能较慢, 请稍候)..."
 for attempt in 1 2 3; do

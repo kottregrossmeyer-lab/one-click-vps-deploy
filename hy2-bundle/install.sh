@@ -31,6 +31,7 @@ echo -e "${CYAN}${BOLD}========================================${NC}"
 echo -e "${CYAN}${BOLD}   sing-box 一键部署脚本 (HY2 / VLESS)${NC}"
 echo -e "${CYAN}${BOLD}========================================${NC}"
 echo ""
+echo "[提示] 较老的系统(如 Debian 9 / Ubuntu 18 / CentOS 7-8 等已 EOL 的发行版)可能在装包阶段报错 —— 多为软件源已下线所致, 请自行排查; 建议 Debian 11+ / Ubuntu 20.04+ / RHEL 9 系。"
 
 read -p "创建新用户? (${YELLOW}y=创建, 回车=跳过${NC}): " CREATE_USER
 CREATE_USER=${CREATE_USER:-N}

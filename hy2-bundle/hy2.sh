@@ -24,6 +24,7 @@ URL="https://mirror.notebase.cn/bundle/hy2-bundle.tar.gz"
 echo "=============================================="
 echo "   sing-box 节点一键部署 (HY2 / VLESS)"
 echo "=============================================="
+echo "[提示] 较老的系统(如 Debian 9 / Ubuntu 18 / CentOS 7-8 等已 EOL 的发行版)可能在装包阶段报错 —— 多为软件源已下线所致, 请自行排查; 建议 Debian 11+ / Ubuntu 20.04+ / RHEL 9 系。"
 
 echo "[1/2] 检查/更新部署包..."
 if [[ -s "$PKG" ]] && tar tzf "$PKG" >/dev/null 2>&1; then
