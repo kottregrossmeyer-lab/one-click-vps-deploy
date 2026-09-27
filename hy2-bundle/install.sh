@@ -455,6 +455,12 @@ echo -e "${GREEN}>> RHEL 在线安装 sing-box ...${NC}"
         *) echo "不支持的架构: $(uname -m)" >&2; exit 1 ;;
     esac
     # 优先从 hk 自家域名拉(国内快);GitHub 兜底
+    # ⚠️ sing-box 版本来源(2026-09-28 血泪): RHEL 系从这里拉 mirror 的
+    # bundle/singbox/sing-box-linux-<arch>.tar.gz; Debian 系用下面 else 分支的**包内 bin/sing-box**
+    # —— 升级时【两处都要换】, 否则两个发行版系跑的不是一个版本。
+    # 教训: 包内 1.13.19 的 Reality **服务端**是坏的 —— 客户端连它一律
+    # "REALITY: processed invalid connection"(客户端表现为 timeout/EOF), 同一份配置换 1.14 立刻正常。
+    # 已升 1.14.2。
     if ! curl -fSL -o /tmp/sing-box.tar.gz "https://mirror.notebase.cn/bundle/singbox/sing-box-linux-${SB_ARCH}.tar.gz"; then
 echo -e "${GREEN}>> hk 下载失败,回退 GitHub ...${NC}"
         SB_VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
