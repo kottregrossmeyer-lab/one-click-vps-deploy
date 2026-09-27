@@ -850,7 +850,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
         {'clash_mode': 'direct', 'server': 'dns-direct'},
         {'clash_mode': 'global', 'server': 'dns-proxy'},
-        {'domain': node_hosts, 'server': 'dns-bootstrap'},
+        {'domain': _one(node_hosts), 'server': 'dns-bootstrap'},
         {'query_type': qtypes, 'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'server': 'dns-fakeip'},
         {'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'server': 'dns-proxy'},
         {'domain_suffix': HARDCODED_DIRECT_SUFFIX, 'server': 'dns-direct'},
@@ -872,7 +872,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
         {'protocol': 'dns', 'action': 'hijack-dns'},
-        {'domain': node_hosts, 'outbound': 'direct'},
+        {'domain': _one(node_hosts), 'outbound': 'direct'},
         {'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'outbound': proxy_tag},
         {'domain_suffix': HARDCODED_DIRECT_SUFFIX, 'outbound': 'direct'},
         {'domain': HARDCODED_DIRECT_DOMAIN, 'outbound': 'direct'},
@@ -1159,7 +1159,7 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
         *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
         {'clash_mode': 'direct', 'server': 'dns-direct'},
         {'clash_mode': 'global', 'server': 'dns-proxy'},
-        {'domain': bootstrap_hosts, 'server': 'dns-bootstrap'},
+        {'domain': _one(bootstrap_hosts), 'server': 'dns-bootstrap'},
         {'rule_set': 'private', 'server': 'dns-direct'},
         {'rule_set': ['dw-microsoft-cn', 'dw-apple-cn'], 'server': 'dns-direct'},
         {'rule_set': 'apple', 'server': 'dns-direct'},
@@ -1185,7 +1185,7 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
         {'protocol': 'dns', 'action': 'hijack-dns'},
-        {'domain': bootstrap_hosts, 'outbound': 'direct'},
+        {'domain': _one(bootstrap_hosts), 'outbound': 'direct'},
     ]
     if node_ip_cidrs:
         route_rules.append({'ip_cidr': _one(node_ip_cidrs), 'outbound': 'direct'})
