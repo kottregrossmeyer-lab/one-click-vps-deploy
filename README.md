@@ -34,6 +34,8 @@
 
 ```bash
 curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh && sudo bash /tmp/setup.sh
+# root 直登的机器（没装 sudo 的精简镜像/容器）不用 sudo：去掉末尾的 sudo 直接跑即可，
+# 脚本会自己判断权限；既不是 root 又没有 sudo 时它会明确提示你用 su - 切过去。
 ```
 
 ### 客户端怎么用（含 Shadowrocket / 小火箭）

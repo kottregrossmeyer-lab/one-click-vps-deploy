@@ -2,6 +2,7 @@
 # ============================================================
 #  订阅转换服务 · 一键自动部署引导脚本
 #  用法:  curl -fsSL -o /tmp/setup.sh <下载地址>/setup.sh && sudo bash /tmp/setup.sh
+#         (root 直登的机器不用 sudo: 直接 bash /tmp/setup.sh —— 脚本自己会判断权限, 没 sudo 也不会炸)
 #         可直接带订阅链接 (自动识别协议类型, 跳过节点选择):
 #            ... && sudo bash /tmp/setup.sh 'vless://...' ['hysteria2://...']
 #         或用 SUB_LINK / SUB_LINK2 环境变量
