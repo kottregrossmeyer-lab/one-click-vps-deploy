@@ -16,6 +16,15 @@
 #   ② "小火箭规则配置": ?target=conf(或 shadowrocket)返回 John Shall lazy.conf 去注释干净版,
 #      ?raw=1 返回原样 + [Proxy] 注入节点行(vless 注入 / hysteria2 只能注释); 拉不到上游自动退回最小配置。
 #
+# v5.3 (2026-09-28) sing-box 输出写法对齐 CF worker(sub-rules) + IPv6 开关:
+#   ① **关 IPv6 三层(默认)**: dns 里 AAAA 一律回 NOERROR 空答案、route 里 ip_version:6 → reject、
+#      dns.strategy=ipv4_only; clash 侧 ipv6:false。单栈节点必须关 —— 否则客户端解析到真 v6 地址后
+#      绕开隧道直连, 表现为"打开用不了"。**双栈节点加 `?v6=on`** 打开(该变体按需现算, 不占缓存)。
+#   ② 键序/写法一律照 **sing-box 自己序列化出来的样子**(Go 结构体顺序 / Listable 单项写标量 /
+#      Go 时长写法), 所以 `sing-box format` 的输出与本服务输出逐字节相同, 用户对比不会有差异。
+#   ③ 去掉 tun 的 mtu/stack —— stack 官方 1.15 弃用、1.17 移除(迁移 = 直接删该字段);
+#      auto_redirect 官方只要求 Linux + auto_route, 不依赖 stack。
+#
 # v5 (2026-08-21) 新增 Hysteria2 (HY2) 支持, 纯加法分支, VLESS-only 行为不变:
 #   - config.json 可加可选 rawHy2Url (hysteria2:// 或 hy2://)
 #   - HY2 支持端口跳跃: 单端口 / 端口段 a-b / 逗号混合 (sing-box: server_ports+hop_interval; clash: ports+hop-interval)
@@ -50,7 +59,7 @@ RULES_META_GEOSITE = ['private', 'cn', 'geolocation-!cn', 'category-ads-all',
 RULES_META_GEOIP = ['private', 'cn', 'telegram']
 RULES_DUSTIN_SPECIAL = ['microsoft-cn', 'apple-cn']
 RULES_SING_SKIP_GEOSITE = {'category-ads-all'}  # sing-box 侧不挂 ads 集(与 rule.worker.js 一致)
-RULES_PROXY_DOMAIN_SETS = [['github'], ['openai'], ['telegram']]
+RULES_PROXY_DOMAIN_SETS = ['github', 'openai', 'telegram']   # 单项即标量: sing-box 序列化就是这么写的
 
 # ─────────────────────────────────────────────────────────────
 # 小火箭(Shadowrocket)规则配置(2026-09-11 新增旁路, ?target=conf)
@@ -782,8 +791,25 @@ def _vless_outbound(node):
     }
 
 
+def _one(v):
+    """sing-box 的 Listable 字段只有一项时会序列化成标量 —— 照它的写法输出, 两边逐字一致。"""
+    return v[0] if isinstance(v, list) and len(v) == 1 else v
+
+
+def _go_dur(raw, fallback='5m0s'):
+    """时长写 Go 的 Duration 写法('300s'→'5m0s') —— sing-box 序列化出来就是这个样子。"""
+    s = str(raw or '').strip() or fallback
+    m = re.fullmatch(r'(\d+)([smh])', s)
+    if not m:
+        return s
+    sec = int(m.group(1)) * {'s': 1, 'm': 60, 'h': 3600}[m.group(2)]
+    h, rem = divmod(sec, 3600)
+    mi, se = divmod(rem, 60)
+    return (f'{h}h' if h else '') + (f'{mi}m' if h or mi else '') + f'{se}s'
+
+
 def _hy2_outbound(node):
-    """Hysteria2 出站 (支持端口跳跃: server_ports + hop_interval)"""
+    """Hysteria2 出站 (支持端口跳跃: server_ports + hop_interval)。键序 = sing-box 序列化顺序。"""
     ob = {
         'type': 'hysteria2',
         'tag': node['name'],
@@ -791,43 +817,57 @@ def _hy2_outbound(node):
         'server_port': node['port'],
     }
     if node.get('server_ports'):
-        ob['server_ports'] = node['server_ports']
-        ob['hop_interval'] = node.get('hop_interval') or '300s'
-    ob['password'] = node['password']
+        ob['server_ports'] = _one(node['server_ports'])
+        ob['hop_interval'] = _go_dur(node.get('hop_interval'))
     if node.get('obfs'):
         ob['obfs'] = {'type': node['obfs'], 'password': node.get('obfs_password') or ''}
+    ob['password'] = node['password']
     tls = {'enabled': True, 'server_name': node.get('sni') or node['address']}
     if node.get('insecure'):
         tls['insecure'] = True
     if node.get('alpn'):
-        tls['alpn'] = node['alpn']
+        tls['alpn'] = _one(node['alpn'])
     ob['tls'] = tls
     return ob
 
 
-def build_singbox(nodes, router_mode=False):
+def build_singbox(nodes, router_mode=False, v6_on=False):
+    """sing-box 客户端配置。
+
+    v6_on=False(默认) = **关 IPv6 三层**: ①DNS 里 AAAA 一律回空 ②route 里 v6 整段拒
+    ③dns.strategy=ipv4_only。单栈节点(自己的一键部署不给节点加 AAAA, 用户拍板"ipv6 路由很差")
+    必须关, 否则客户端拿到真 v6 地址后绕开隧道直连, 表现为"打开用不了"。双栈节点加 `?v6=on`。
+
+    ⚠️ 键序与写法一律照 **sing-box 自己序列化出来的样子**(Go 结构体顺序 / Listable 单项写标量 /
+    Go 时长写法) —— 这样 `sing-box format` 的输出与本配置逐字节相同, 用户拿它跟手头配置对比不会有差。
+    """
     proxy_tag = 'proxy'
     node_hosts = [n['address'] for n in nodes]
+    qtypes = ['A', 'AAAA'] if v6_on else 'A'   # 关了 v6 就只查 A
 
     dns_rules = [
-        {'clash_mode': 'direct', 'action': 'route', 'server': 'dns-direct'},
-        {'clash_mode': 'global', 'action': 'route', 'server': 'dns-proxy'},
+        # 第一层关 v6: AAAA 一律回 NOERROR 空答案
+        *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
+        {'clash_mode': 'direct', 'server': 'dns-direct'},
+        {'clash_mode': 'global', 'server': 'dns-proxy'},
         {'domain': node_hosts, 'server': 'dns-bootstrap'},
-        {'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'query_type': qtypes, 'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'server': 'dns-fakeip'},
         {'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'server': 'dns-proxy'},
         {'domain_suffix': HARDCODED_DIRECT_SUFFIX, 'server': 'dns-direct'},
         {'domain': HARDCODED_DIRECT_DOMAIN, 'server': 'dns-direct'},
-        {'domain_suffix': HARDCODED_PROXY_SUFFIX, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'query_type': qtypes, 'domain_suffix': HARDCODED_PROXY_SUFFIX, 'server': 'dns-fakeip'},
         {'domain_suffix': HARDCODED_PROXY_SUFFIX, 'server': 'dns-proxy'},
-        {'domain': HARDCODED_PROXY_DOMAIN, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'query_type': qtypes, 'domain': HARDCODED_PROXY_DOMAIN, 'server': 'dns-fakeip'},
         {'domain': HARDCODED_PROXY_DOMAIN, 'server': 'dns-proxy'},
-        {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
+        {'query_type': qtypes, 'domain_keyword': HARDCODED_PROXY_KEYWORD, 'server': 'dns-fakeip'},
         {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'server': 'dns-proxy'},
         # geosite-cn 国内域名大全: 未硬编码的国内域名(字节新CDN等) DNS 走阿里, 出口国内 + geoDNS 正确
-        {'rule_set': ['geosite-cn'], 'server': 'dns-direct'},
+        {'rule_set': 'geosite-cn', 'server': 'dns-direct'},
     ]
 
     route_rules = [
+        # 第二层关 v6: 整段 v6 流量直接拒(不给它绕开隧道直连的机会)
+        *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
         {'action': 'sniff'},
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
@@ -842,9 +882,9 @@ def build_singbox(nodes, router_mode=False):
         {'domain_keyword': HARDCODED_PROXY_KEYWORD, 'outbound': proxy_tag},
         {'ip_is_private': True, 'outbound': 'direct'},
         # geosite-cn 域名级国内兜底: 与 GEOIP 兜底互补(域名先判), 国内域名直接出站
-        {'rule_set': ['geosite-cn'], 'outbound': 'direct'},
+        {'rule_set': 'geosite-cn', 'outbound': 'direct'},
         # GEOIP 兜底层: 硬编码规则没列到的域名按解析出的IP归属判断, 中国IP直接出站
-        {'rule_set': ['geoip-cn'], 'outbound': 'direct'},
+        {'rule_set': 'geoip-cn', 'outbound': 'direct'},
     ]
 
     outbounds = []
@@ -857,52 +897,58 @@ def build_singbox(nodes, router_mode=False):
     outbounds.append({'type': 'block', 'tag': 'block'})
 
     tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
-           'address': ['172.19.0.1/30'], 'mtu': 9000, 'auto_route': True,
-           'strict_route': True, 'stack': 'system' if router_mode else 'gvisor'}
+           'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'], 'auto_route': True}
+    if not router_mode:
+        tun['strict_route'] = True      # 键序: sing-box 里 auto_redirect 排在 strict_route 前
+    # 不写 mtu/stack = 走 sing-box 默认。⚠️ 路由模式**不能**再写 stack: sing-box 1.15 弃用、
+    # 1.17 移除(官方迁移 = 直接删掉该字段, 改用 sing-tun 自带协议栈); auto_redirect 官方只要求
+    # Linux + auto_route, 不依赖 stack, 所以只留 auto_redirect。
     if router_mode:
         tun['auto_redirect'] = True
+        tun['strict_route'] = True
 
-    return {
+    cfg = {
         'log': {'level': 'warn', 'timestamp': True},
-        # 1.14+: 远程规则集下载走直连(download_detour 已弃用, 1.16 移除)。⚠️ 不能写 'detour':'direct'
-        # —— 规则集下载发生在 outbound 初始化前, direct 还是空的, 会 fatal "detour to an empty
-        # direct outbound makes no sense"(同 DNS 坑, 实测复现); 不带 detour 的 http_client 默认即直连。
-        'http_clients': [{'tag': 'direct-client'}],
         'dns': {
             'servers': [
                 # 注意:1.12+ 里 DNS server 不带 detour 即默认走空 direct,显式写 'detour': 'direct' 会报
                 # "detour to an empty direct outbound makes no sense" 直接 fatal。dns-bootstrap/dns-direct 保持无 detour。
-                {'tag': 'dns-bootstrap', 'type': 'udp', 'server': DNS['bootstrap']},
-                {'tag': 'dns-direct', 'type': 'https', 'server': DNS['adgServer'], 'server_port': DNS['adgPort'],
-                 'path': DNS['adgPath'], 'domain_resolver': 'dns-bootstrap'},
+                {'type': 'udp', 'tag': 'dns-bootstrap', 'server': DNS['bootstrap']},
+                {'type': 'https', 'tag': 'dns-direct', 'domain_resolver': 'dns-bootstrap',
+                 'server': DNS['adgServer'], 'server_port': DNS['adgPort'], 'path': DNS['adgPath']},
                 # dns-proxy 用 DoH(1.1.1.1) 走隧道: TCP传输VLESS也稳 + 加密 + 防污染(与 abc.js 对齐)
-                {'tag': 'dns-proxy', 'type': 'https', 'server': '1.1.1.1', 'server_port': 443,
-                 'path': '/dns-query', 'detour': proxy_tag},
-                {'tag': 'dns-fakeip', 'type': 'fakeip', 'inet4_range': '198.18.0.0/16'},
+                {'type': 'https', 'tag': 'dns-proxy', 'detour': proxy_tag, 'server': '1.1.1.1',
+                 'server_port': 443, 'path': '/dns-query'},
+                {'type': 'fakeip', 'tag': 'dns-fakeip', 'inet4_range': '198.18.0.0/16'},
             ],
             'rules': dns_rules,
             'final': 'dns-proxy',
         },
+        # 1.14+: 远程规则集下载走直连(download_detour 已弃用, 1.16 移除)。⚠️ 不能写 'detour':'direct'
+        # —— 规则集下载发生在 outbound 初始化前, direct 还是空的, 会 fatal "detour to an empty
+        # direct outbound makes no sense"(同 DNS 坑, 实测复现); 不带 detour 的 http_client 默认即直连。
+        # version 2 = 新版 HTTP 客户端实现(与用户手头配置一致)
+        'http_clients': [{'tag': 'direct-client', 'version': 2}],
         'inbounds': [
             tun,
             {'type': 'mixed', 'tag': 'mixed-in', 'listen': '0.0.0.0', 'listen_port': 7890},
         ],
         'outbounds': outbounds,
         'route': {
-            'default_domain_resolver': 'dns-bootstrap',
-            'default_http_client': 'direct-client',
-            'auto_detect_interface': True,
             'rules': route_rules,
             'rule_set': [{
-                'type': 'remote', 'tag': 'geosite-cn', 'format': 'binary',
+                'type': 'remote', 'tag': 'geosite-cn',
                 'url': RULE_SERVER + '/sing/geosite/cn.srs',
-                'update_interval': '24h',
+                'update_interval': '24h0m0s',
             }, {
-                'type': 'remote', 'tag': 'geoip-cn', 'format': 'binary',
+                'type': 'remote', 'tag': 'geoip-cn',
                 'url': RULE_SERVER + '/sing/geoip/cn.srs',
-                'update_interval': '24h',
+                'update_interval': '24h0m0s',
             }],
             'final': proxy_tag,
+            'auto_detect_interface': True,
+            'default_domain_resolver': 'dns-bootstrap',
+            'default_http_client': 'direct-client',
         },
         'experimental': {
             'cache_file': {'enabled': True, 'store_fakeip': True},
@@ -916,6 +962,10 @@ def build_singbox(nodes, router_mode=False):
             },
         },
     }
+    if not v6_on:
+        # 第三层关 v6: DNS 只解析 A(键序排在 final 之后 = sing-box 序列化顺序)
+        cfg['dns'] = {**cfg['dns'], 'strategy': 'ipv4_only'}
+    return cfg
 
 
 def _clash_vless_lines(node, q):
@@ -964,7 +1014,7 @@ def _clash_hy2_lines(node, q):
     return lines
 
 
-def build_clash(nodes):
+def build_clash(nodes, v6_on=False):
     q = lambda s: json.dumps(str(s), ensure_ascii=False)
 
     proxy = []
@@ -1000,14 +1050,14 @@ def build_clash(nodes):
         "bind-address: '*'",
         'mode: rule',
         'log-level: info',
-        'ipv6: false',
+        f'ipv6: {"true" if v6_on else "false"}',   # 默认关(单栈节点); ?v6=on 打开
         'unified-delay: true',
         'profile:',
         '  store-selected: true',
         '  store-fake-ip: true',
         'dns:',
         '  enable: true',
-        '  ipv6: false',
+        f'  ipv6: {"true" if v6_on else "false"}',
         '  enhanced-mode: fake-ip',
         '  fake-ip-range: 198.18.0.1/16',
         '  use-hosts: true',
@@ -1066,14 +1116,14 @@ def _rules_sing_rule_sets():
     for name in RULES_META_GEOSITE:
         if name in RULES_SING_SKIP_GEOSITE:
             continue
-        out.append({'type': 'remote', 'tag': name, 'format': 'binary',
-                    'url': RULE_SERVER + '/sing/geosite/' + name + '.srs', 'update_interval': '24h'})
+        out.append({'type': 'remote', 'tag': name,
+                    'url': RULE_SERVER + '/sing/geosite/' + name + '.srs', 'update_interval': '24h0m0s'})
     for name in RULES_META_GEOIP:
-        out.append({'type': 'remote', 'tag': 'geoip-' + name, 'format': 'binary',
-                    'url': RULE_SERVER + '/sing/geoip/' + name + '.srs', 'update_interval': '24h'})
+        out.append({'type': 'remote', 'tag': 'geoip-' + name,
+                    'url': RULE_SERVER + '/sing/geoip/' + name + '.srs', 'update_interval': '24h0m0s'})
     for name in RULES_DUSTIN_SPECIAL:
-        out.append({'type': 'remote', 'tag': 'dw-' + name, 'format': 'binary',
-                    'url': RULE_SERVER + '/sing/special/' + name + '.srs', 'update_interval': '24h'})
+        out.append({'type': 'remote', 'tag': 'dw-' + name,
+                    'url': RULE_SERVER + '/sing/special/' + name + '.srs', 'update_interval': '24h0m0s'})
     return out
 
 
@@ -1092,40 +1142,45 @@ def _rules_clash_providers():
     return out
 
 
-def build_singbox_rules(nodes, router_mode=False):
+def build_singbox_rules(nodes, router_mode=False, v6_on=False):
     """规则集模式 sing-box: 复用 build_singbox 的骨架(outbounds/tun/DNS servers/http_clients/
     experimental 全同), 只换 dns.rules / route.rules / route.rule_set 三段(顺序对齐 rule.worker.js)。
     顺序铁律: private/dw-*-cn/apple 直连排最前 → google/microsoft/域名代理 → cn/geoip-cn 国内兜底 →
-    geolocation-!cn 境外兜底。"""
-    cfg = build_singbox(nodes, router_mode)
+    geolocation-!cn 境外兜底。关 v6 三层与硬编码模式同(见 build_singbox 文档串)。"""
+    cfg = build_singbox(nodes, router_mode, v6_on)
     proxy_tag = 'proxy'
     node_hosts = list(dict.fromkeys(n['address'] for n in nodes))  # 去重(双节点常同域)
     node_ip_cidrs = [x for x in (_literal_ip_cidr(h) for h in node_hosts) if x]
     bootstrap_hosts = [h for h in [_rules_rule_server_host()] + node_hosts if h]
+    qtypes = ['A', 'AAAA'] if v6_on else 'A'
 
     dns_rules = [
-        {'clash_mode': 'direct', 'action': 'route', 'server': 'dns-direct'},
-        {'clash_mode': 'global', 'action': 'route', 'server': 'dns-proxy'},
+        # 第一层关 v6: AAAA 一律回 NOERROR 空答案
+        *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
+        {'clash_mode': 'direct', 'server': 'dns-direct'},
+        {'clash_mode': 'global', 'server': 'dns-proxy'},
         {'domain': bootstrap_hosts, 'server': 'dns-bootstrap'},
-        {'rule_set': ['private'], 'server': 'dns-direct'},
+        {'rule_set': 'private', 'server': 'dns-direct'},
         {'rule_set': ['dw-microsoft-cn', 'dw-apple-cn'], 'server': 'dns-direct'},
-        {'rule_set': ['apple'], 'server': 'dns-direct'},
-        {'rule_set': ['google'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
-        {'rule_set': ['google'], 'server': 'dns-proxy'},
-        {'rule_set': ['microsoft'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
-        {'rule_set': ['microsoft'], 'server': 'dns-proxy'},
+        {'rule_set': 'apple', 'server': 'dns-direct'},
+        {'query_type': qtypes, 'rule_set': 'google', 'server': 'dns-fakeip'},
+        {'rule_set': 'google', 'server': 'dns-proxy'},
+        {'query_type': qtypes, 'rule_set': 'microsoft', 'server': 'dns-fakeip'},
+        {'rule_set': 'microsoft', 'server': 'dns-proxy'},
     ]
     for rs in RULES_PROXY_DOMAIN_SETS:
-        dns_rules.append({'rule_set': rs, 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'})
+        dns_rules.append({'query_type': qtypes, 'rule_set': rs, 'server': 'dns-fakeip'})
     for rs in RULES_PROXY_DOMAIN_SETS:
         dns_rules.append({'rule_set': rs, 'server': 'dns-proxy'})
     dns_rules += [
-        {'rule_set': ['cn'], 'server': 'dns-direct'},
-        {'rule_set': ['geolocation-!cn'], 'query_type': ['A', 'AAAA'], 'server': 'dns-fakeip'},
-        {'rule_set': ['geolocation-!cn'], 'server': 'dns-proxy'},
+        {'rule_set': 'cn', 'server': 'dns-direct'},
+        {'query_type': qtypes, 'rule_set': 'geolocation-!cn', 'server': 'dns-fakeip'},
+        {'rule_set': 'geolocation-!cn', 'server': 'dns-proxy'},
     ]
 
     route_rules = [
+        # 第二层关 v6: 整段 v6 流量直接拒
+        *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
         {'action': 'sniff'},
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
@@ -1133,22 +1188,22 @@ def build_singbox_rules(nodes, router_mode=False):
         {'domain': bootstrap_hosts, 'outbound': 'direct'},
     ]
     if node_ip_cidrs:
-        route_rules.append({'ip_cidr': node_ip_cidrs, 'outbound': 'direct'})
+        route_rules.append({'ip_cidr': _one(node_ip_cidrs), 'outbound': 'direct'})
     route_rules += [
-        {'rule_set': ['private'], 'outbound': 'direct'},
+        {'rule_set': 'private', 'outbound': 'direct'},
         {'rule_set': ['dw-microsoft-cn', 'dw-apple-cn'], 'outbound': 'direct'},
-        {'rule_set': ['apple'], 'outbound': 'direct'},
-        {'rule_set': ['geoip-private'], 'outbound': 'direct'},
-        {'rule_set': ['google'], 'outbound': proxy_tag},
-        {'rule_set': ['microsoft'], 'outbound': proxy_tag},
+        {'rule_set': 'apple', 'outbound': 'direct'},
+        {'rule_set': 'geoip-private', 'outbound': 'direct'},
+        {'rule_set': 'google', 'outbound': proxy_tag},
+        {'rule_set': 'microsoft', 'outbound': proxy_tag},
     ]
     for rs in RULES_PROXY_DOMAIN_SETS:
         route_rules.append({'rule_set': rs, 'outbound': proxy_tag})
     route_rules += [
-        {'rule_set': ['geoip-telegram'], 'outbound': proxy_tag},
-        {'rule_set': ['cn'], 'outbound': 'direct'},
-        {'rule_set': ['geoip-cn'], 'outbound': 'direct'},
-        {'rule_set': ['geolocation-!cn'], 'outbound': proxy_tag},
+        {'rule_set': 'geoip-telegram', 'outbound': proxy_tag},
+        {'rule_set': 'cn', 'outbound': 'direct'},
+        {'rule_set': 'geoip-cn', 'outbound': 'direct'},
+        {'rule_set': 'geolocation-!cn', 'outbound': proxy_tag},
         {'ip_is_private': True, 'outbound': 'direct'},
     ]
 
@@ -1158,11 +1213,11 @@ def build_singbox_rules(nodes, router_mode=False):
     return cfg
 
 
-def build_clash_rules(nodes):
+def build_clash_rules(nodes, v6_on=False):
     """规则集模式 clash: 复用 build_clash 的骨架(节点/组/DNS 段逐字节同), 把结尾 rules: 段替换为
     rule-providers(mrs) + RULE-SET 规则。"""
     q = lambda s: json.dumps(str(s), ensure_ascii=False)
-    lines = build_clash(nodes).rstrip(NL).split(NL)
+    lines = build_clash(nodes, v6_on).rstrip(NL).split(NL)
     out = lines[:lines.index('rules:')] + ['rule-providers:']
     for name, behavior, url, path in _rules_clash_providers():
         out += ['  ' + q(name) + ':',
@@ -1317,16 +1372,25 @@ def _want_rules_mode(path, qs):
     return (qs.get('mode', [''])[0] or '').lower() == 'rules'
 
 
-def get_configs_rules():
+def get_configs_rules(v6_on=False):
     """规则集模式配置(旁路)。返回与 get_configs() 同键的 dict, 只把 singbox/singbox_router/clash
     换成规则集版; raw_vless/raw_hy2 原样透传 → base64 订阅节点不变。生成失败直接抛异常,
     由 do_GET 的 except 兜底成 500, 不影响硬编码老链接。"""
     c = get_configs()
+    if v6_on:
+        # ?v6=on(双栈节点)按需现算, 不占缓存 —— 默认的关 v6 版仍是缓存里的那份
+        nodes = _cache.get('rules_nodes') or _load_nodes_for_rules()
+        return dict(c,
+                    singbox=json.dumps(build_singbox_rules(nodes, v6_on=True), indent=2, ensure_ascii=False),
+                    singbox_router=json.dumps(build_singbox_rules(nodes, router_mode=True, v6_on=True),
+                                              indent=2, ensure_ascii=False),
+                    clash=build_clash_rules(nodes, v6_on=True))
     mtime = c.get('mtime', 0)
     if _cache.get('rules_mtime') == mtime and _cache.get('rules_singbox'):
         return dict(c, singbox=_cache['rules_singbox'],
                     singbox_router=_cache['rules_singbox_router'], clash=_cache['rules_clash'])
     nodes = _load_nodes_for_rules()
+    _cache['rules_nodes'] = nodes
     _cache['rules_mtime'] = mtime
     _cache['rules_singbox'] = json.dumps(build_singbox_rules(nodes), indent=2, ensure_ascii=False)
     _cache['rules_singbox_router'] = json.dumps(build_singbox_rules(nodes, router_mode=True),
@@ -1336,7 +1400,7 @@ def get_configs_rules():
                 singbox_router=_cache['rules_singbox_router'], clash=_cache['rules_clash'])
 
 
-def get_configs():
+def get_configs(v6_on=False):
     try:
         mtime = os.path.getmtime(CONFIG_PATH)
     except OSError:
@@ -1364,9 +1428,18 @@ def get_configs():
         _cache['raw_vless'] = raw_vless or None
         _cache['raw_hy2'] = raw_hy2 or None
         _cache['node_name'] = name
+        _cache['nodes'] = nodes
         _cache['singbox'] = json.dumps(build_singbox(nodes), indent=2, ensure_ascii=False)
         _cache['singbox_router'] = json.dumps(build_singbox(nodes, router_mode=True), indent=2, ensure_ascii=False)
         _cache['clash'] = build_clash(nodes)
+    if v6_on:
+        # ?v6=on(双栈节点): 按需现算, 不占缓存
+        nodes = _cache.get('nodes') or []
+        return dict(_cache,
+                    singbox=json.dumps(build_singbox(nodes, v6_on=True), indent=2, ensure_ascii=False),
+                    singbox_router=json.dumps(build_singbox(nodes, router_mode=True, v6_on=True),
+                                              indent=2, ensure_ascii=False),
+                    clash=build_clash(nodes, v6_on=True))
     return _cache
 
 
@@ -1385,6 +1458,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query) if '?' in self.path else {}
             target = (qs.get('target', [''])[0] or '').lower()
             router = (qs.get('router', [''])[0] or '').lower() in ('1', 'true', 'yes')
+            # IPv6: 默认关(单栈节点, 见 build_singbox 文档串); 双栈节点加 ?v6=on
+            v6_on = (qs.get('v6', [''])[0] or '').lower() in ('1', 'true', 'yes', 'on')
 
             # /health
             if self.path == '/health':
@@ -1394,7 +1469,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # ── 规则集模式(旁路, 2026-09-11): /rules 或 ?mode=rules ──
             # c = get_configs() 已在上面按老路径跑完; 这里只把配置对象换成规则集版, 老链接行为不变。
             if _want_rules_mode(self.path, qs):
-                c = get_configs_rules()
+                c = get_configs_rules(v6_on)
+            elif v6_on:
+                c = get_configs(True)
 
             # ── 小火箭(Shadowrocket)规则配置(旁路, 2026-09-11): ?target=conf / shadowrocket ──
             # 与模式无关(两条链接都能用); ?raw=1 返回原样+注入节点行。拉不到上游会自动退回最小配置。
@@ -1402,7 +1479,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._respond(200, get_shadowrocket(c, raw=(qs.get('raw', [''])[0] == '1')), 'text/plain')
                 return
 
-            # sing-box (router=1 输出 auto_redirect + system 栈, 与 new.worker.js 对齐)
+            # sing-box (router=1 输出 auto_redirect; ⚠️ 不再写 stack —— 1.15 弃用 / 1.17 移除)
             if any(k in ua for k in ('sing-box', 'sfa', 'sfi', 'sfm')) or target == 'singbox':
                 body = c['singbox_router'] if router else c['singbox']
                 self._respond(200, body, 'application/json')

@@ -42,7 +42,7 @@ curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh && sudo
 
 | 客户端 | 用哪条 | 说明 |
 |--------|--------|------|
-| sing-box / SFI / SFA / SFM | `<订阅>` | 按 UA 自动返回 JSON；`&router=1` 出路由器版（auto_redirect + system 栈） |
+| sing-box / SFI / SFA / SFM | `<订阅>` | 按 UA 自动返回 JSON；`&router=1` 出路由器版（auto_redirect；⚠️ 不再写 `stack`——官方 1.15 弃用、1.17 移除） |
 | Clash / Mihomo / Stash / Clash Verge | `<订阅>` | 按 UA 自动返回 YAML |
 | v2rayN 等通用客户端 | `<订阅>` | 返回 Base64 订阅（VLESS + Hysteria2） |
 | **小火箭 · 节点订阅** | `<订阅>` | **必须用这条导入节点**：Hysteria2 只能走 URI 订阅（conf 的节点行表达不了端口跳跃/认证语义） |
@@ -52,6 +52,8 @@ curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh && sudo
 （小火箭用 URL 最后一段当配置名，两条分开导入、互不影响；不要拿 conf 当节点订阅用。）
 
 **想要规则集版分流**：把上面两条里的 `<订阅>` 换成 `<订阅>?mode=rules` 即可，节点完全一样，只是分流规则来自规则集。
+
+**IPv6 默认是关的**：一键部署出来的节点默认不带 IPv6 地址，所以配置里把 v6 关死了（DNS 里 AAAA 一律回空 + 路由里 v6 整段拒 + `dns.strategy: ipv4_only`，Clash 侧 `ipv6: false`）—— 不关的话客户端会解析到真 v6 地址、绕开隧道直连，表现就是「能连上但打不开」。**节点是双栈（域名有 AAAA）就加 `?v6=on` 打开**，sing-box 与 Clash 一起生效。
 
 ## ② VPS 节点一键部署（hy2.sh）
 
