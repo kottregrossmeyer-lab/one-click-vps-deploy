@@ -105,6 +105,28 @@ input_port() {
     done
 }
 
+# ── 节点名自动检测国家(2026-09-28) ──
+# 依次试三个免费接口, 取"英文国家名"; **任何一个失败/结果不可信都只是回退, 绝不退出脚本**。
+# 校验: 结果只允许 字母/空格/点/连字符 且 ≤40 字符 —— 防的是运营商劫持页、限流 JSON、
+# 错误页被当成节点名写进配置(那种名字比 node 更糟, 而且会被写进订阅链接)。
+detect_country_name() {
+    local s=""
+    s=$(curl -s -m 6 https://ifconfig.co/country 2>/dev/null) || s=""
+    if [[ -z "${s//[[:space:]]/}" ]]; then
+        s=$(curl -s -m 6 "http://ip-api.com/json/?fields=country" 2>/dev/null) || s=""
+        s=$(printf '%s' "$s" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    fi
+    if [[ -z "${s//[[:space:]]/}" ]]; then
+        s=$(curl -s -m 6 https://ipinfo.io/country 2>/dev/null) || s=""   # 只给国家码, 最后兜底
+    fi
+    s=$(printf '%s' "$s" | tr -d '\r\n' | tr -s ' ' | sed 's/^ *//; s/ *$//')
+    case "$s" in
+        ''|*[!A-Za-z\ .-]*) printf ''; return 0 ;;   # 含非白名单字符 → 视为不可信, 丢弃
+    esac
+    [ "${#s}" -gt 40 ] && { printf ''; return 0; }
+    printf '%s' "$s"
+}
+
 # 端口提示按协议区分: HY2 问监听+跳跃结束两个口; VLESS 只问监听
 if [[ "$PROTO" == "2" ]]; then
     input_port "VLESS 监听端口" 443 LISTEN_PORT ""
@@ -133,8 +155,19 @@ else
     fi
 fi
 
-read -p "节点名称 (${YELLOW}回车=node${NC}): " NODE_NAME
+read -p "节点名称 (${YELLOW}回车=自动检测国家${NC}): " NODE_NAME
+if [[ -z "$NODE_NAME" ]]; then
+    # 回车 = 自动检测国家(英文名); 查不到就静默回退 node, 不影响后续任何步骤
+    NODE_NAME=$(detect_country_name)
+    if [[ -n "$NODE_NAME" ]]; then
+        echo "已自动检测到地区: ${GREEN}${NODE_NAME}${NC}"
+    else
+        echo "未检测到地区(网络不通/接口不可用), 沿用默认名: node"
+    fi
+fi
 NODE_NAME=${NODE_NAME:-node}
+mkdir -p /etc/sing-box 2>/dev/null || true
+echo "$NODE_NAME" > /etc/sing-box/node_name 2>/dev/null || true   # 落盘: 便于以后改名/其它脚本复用
 
 # ========== 连接地址 ==========
 SERVER_IP=$(curl -s -m 5 -4 ifconfig.me 2>/dev/null || curl -s -m 5 -4 ipinfo.io/ip 2>/dev/null || hostname -I | awk '{print $1}')
