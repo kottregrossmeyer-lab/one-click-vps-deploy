@@ -1487,7 +1487,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # ── 小火箭(Shadowrocket)规则配置(旁路, 2026-09-11): ?target=conf / shadowrocket ──
             # 与模式无关(两条链接都能用); ?raw=1 返回原样+注入节点行。拉不到上游会自动退回最小配置。
             if target in ('conf', 'shadowrocket'):
-                self._respond(200, get_shadowrocket(c, raw=(qs.get('raw', [''])[0] == '1')), 'text/plain')
+                # Content-Disposition: 小火箭下载时用它当本地文件名(2026-09-28); 中文名走 RFC 5987:
+                #   attachment; filename="unified.conf"; filename*=UTF-8''%E7%BB%9F%E4%B8%80%E8%AE%A2%E9%98%85.conf
+                self._respond(200, get_shadowrocket(c, raw=(qs.get('raw', [''])[0] == '1')), 'text/plain',
+                              {'Content-Disposition': 'attachment; filename="unified.conf"'})
                 return
 
             # sing-box (router=1 输出 auto_redirect; ⚠️ 不再写 stack —— 1.15 弃用 / 1.17 移除)
