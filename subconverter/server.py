@@ -899,10 +899,15 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     outbounds.append({'type': 'selector', 'tag': proxy_tag, 'outbounds': node_tags, 'default': node_tags[0]})
     outbounds.append({'type': 'direct', 'tag': 'direct'})
 
-    # 不写 dns_address(2026-09-28 用户要求去掉): 官方语义 = 从 address 里第一个 IPv4 后面那个地址派生,
-    #   address 只有 v4 时派生出来必然就是 172.19.0.2(见 rule.worker.js 同款注释)。
+    # 默认(v6_on=False): 只配 v4 —— 设备「没有 v6」, 系统判定无 IPv6, App 老实走 v4(见 VERSIONS ⑨)。
+    #   不写 dns_address: 官方语义 = 从 address 里第一个 IPv4 后面那个地址派生, 只有 v4 时必然就是 172.19.0.2。
+    # ?v6=on(双栈节点): 把 v6 地址加回 tun —— 设备重新「有 v6」, v6 流量进隧道按规则走(国内直连/国外走代理);
+    #   同时**显式把接口 DNS 写回 v4**: address 里有 v6 时官方会多派生一条 v6 DNS(fdfe:dcba:9876::2),
+    #   那是以前 Windows nslookup 报 No response 的坑源。键序照 sing-box 序列化(address → dns_address → auto_route)。
     tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
-           'address': _one(['172.19.0.1/30']), 'auto_route': True}
+           'address': _one(['172.19.0.1/30', 'fdfe:dcba:9876::1/126'] if v6_on else ['172.19.0.1/30']),
+           **({'dns_address': _one(['172.19.0.2'])} if v6_on else {}),
+           'auto_route': True}
     if not router_mode:
         tun['strict_route'] = True      # 键序: sing-box 里 auto_redirect 排在 strict_route 前
     # 不写 mtu/stack = 走 sing-box 默认。⚠️ 路由模式**不能**再写 stack: sing-box 1.15 弃用、
