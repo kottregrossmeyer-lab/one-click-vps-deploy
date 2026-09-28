@@ -44,7 +44,7 @@ DNS = {
     'bootstrap': '180.184.1.1', 'remote': '8.8.8.8',
     'adgServer': 'dns.alidns.com', 'adgPort': 443, 'adgPath': '/dns-query',
 }
-DASHBOARD_URL = 'https://mirror.notebase.cn/download/yacd-ui.zip'
+DASHBOARD_URL = 'https://mirror.notebase.cn/download/singbox-ui.zip'
 RULE_SERVER = 'https://mirror.notebase.cn/rules'  # GEOIP 兜底库(自托管, IP→国家映射, 相对稳定)
 
 # ─────────────────────────────────────────────────────────────
@@ -866,12 +866,14 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     ]
 
     route_rules = [
+        # ⚠️ DNS 劫持排在 clash_mode / v6-reject 之前(sing-box 1.14.2 实测: 排后面时 Direct/Global 模式下 DNS
+        #    被当普通流量; tun 派生出的 v6 接口 DNS 地址也会被 v6-reject 吃掉)
+        {'action': 'sniff'},
+        {'protocol': 'dns', 'action': 'hijack-dns'},
         # 第二层关 v6: 整段 v6 流量直接拒(不给它绕开隧道直连的机会)
         *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
-        {'action': 'sniff'},
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
-        {'protocol': 'dns', 'action': 'hijack-dns'},
         {'domain': _one(node_hosts), 'outbound': 'direct'},
         {'domain_suffix': HARDCODED_PROXY_OVERRIDE, 'outbound': proxy_tag},
         {'domain_suffix': HARDCODED_DIRECT_SUFFIX, 'outbound': 'direct'},
@@ -892,12 +894,12 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         outbounds.append(_vless_outbound(n) if n.get('type') != 'hysteria2' else _hy2_outbound(n))
     node_tags = [o['tag'] for o in outbounds]
     outbounds.append({'type': 'selector', 'tag': proxy_tag, 'outbounds': node_tags, 'default': node_tags[0]})
-    outbounds.append({'type': 'selector', 'tag': 'global', 'outbounds': ['proxy', 'direct', 'block'], 'default': 'proxy'})
     outbounds.append({'type': 'direct', 'tag': 'direct'})
-    outbounds.append({'type': 'block', 'tag': 'block'})
 
     tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
-           'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'], 'auto_route': True}
+           'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'], 'auto_route': True,
+           # ⚠️ 只把 v4 的接口 DNS 地址告诉系统(见 rule.worker.js 同款注释): v6 那条实测走不通
+           'dns_address': _one(['172.19.0.2'])}
     if not router_mode:
         tun['strict_route'] = True      # 键序: sing-box 里 auto_redirect 排在 strict_route 前
     # 不写 mtu/stack = 走 sing-box 默认。⚠️ 路由模式**不能**再写 stack: sing-box 1.15 弃用、
@@ -1179,12 +1181,13 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
     ]
 
     route_rules = [
+        # ⚠️ DNS 劫持排在 clash_mode / v6-reject 之前(同上)
+        {'action': 'sniff'},
+        {'protocol': 'dns', 'action': 'hijack-dns'},
         # 第二层关 v6: 整段 v6 流量直接拒
         *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
-        {'action': 'sniff'},
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
-        {'protocol': 'dns', 'action': 'hijack-dns'},
         {'domain': _one(bootstrap_hosts), 'outbound': 'direct'},
     ]
     if node_ip_cidrs:
