@@ -870,8 +870,8 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         #    被当普通流量; tun 派生出的 v6 接口 DNS 地址也会被 v6-reject 吃掉)
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
-        # 第二层关 v6: 整段 v6 流量直接拒(不给它绕开隧道直连的机会)
-        *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
+        # v6 不在这里「拒」了(2026-09-28): 拒会回 RST, 系统反而以为 v6 可用、App 继续试 v6;
+        #   改成「不给 tun 配 v6 地址」→ 系统判定没有 IPv6 → App 老实走 v4(issue #4434)
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
         {'domain': _one(node_hosts), 'outbound': 'direct'},
@@ -897,7 +897,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     outbounds.append({'type': 'direct', 'tag': 'direct'})
 
     tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
-           'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'], 'auto_route': True,
+           'address': ['172.19.0.1/30'], 'auto_route': True,
            # ⚠️ 只把 v4 的接口 DNS 地址告诉系统(见 rule.worker.js 同款注释): v6 那条实测走不通
            'dns_address': _one(['172.19.0.2'])}
     if not router_mode:
@@ -1184,8 +1184,8 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
         # ⚠️ DNS 劫持排在 clash_mode / v6-reject 之前(同上)
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
-        # 第二层关 v6: 整段 v6 流量直接拒
-        *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
+        # v6 不在这里「拒」了(2026-09-28): 拒会回 RST, 系统反而以为 v6 可用、App 继续试 v6;
+        #   改成「不给 tun 配 v6 地址」→ 系统判定没有 IPv6 → App 老实走 v4(issue #4434)
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
         {'domain': _one(bootstrap_hosts), 'outbound': 'direct'},
