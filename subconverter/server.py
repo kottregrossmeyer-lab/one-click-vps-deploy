@@ -871,6 +871,8 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
         # 第二层关 v6: 整段 v6 流量直接拒(不给它绕开隧道直连的机会)
+        # 国内 v6 放行直连(抖音/字节等自带 HTTPDNS 的 App 只走 v6; 一律 reject 会让 iOS 端断网)
+        {'ip_version': 6, 'rule_set': ['cn', 'geoip-cn'], 'outbound': 'direct'},
         *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
@@ -1185,6 +1187,8 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
         # 第二层关 v6: 整段 v6 流量直接拒
+        # 国内 v6 放行直连(抖音/字节等自带 HTTPDNS 的 App 只走 v6; 一律 reject 会让 iOS 端断网)
+        {'ip_version': 6, 'rule_set': ['cn', 'geoip-cn'], 'outbound': 'direct'},
         *([] if v6_on else [{'ip_version': 6, 'action': 'reject'}]),
         {'clash_mode': 'direct', 'outbound': 'direct'},
         {'clash_mode': 'global', 'outbound': proxy_tag},
