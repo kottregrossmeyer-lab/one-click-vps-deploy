@@ -17,9 +17,11 @@
 #      ?raw=1 返回原样 + [Proxy] 注入节点行(vless 注入 / hysteria2 只能注释); 拉不到上游自动退回最小配置。
 #
 # v5.3 (2026-09-28) sing-box 输出写法对齐 CF worker(sub-rules) + IPv6 开关:
-#   ① **关 IPv6 三层(默认)**: dns 里 AAAA 一律回 NOERROR 空答案、route 里 ip_version:6 → reject、
-#      dns.strategy=ipv4_only; clash 侧 ipv6:false。单栈节点必须关 —— 否则客户端解析到真 v6 地址后
-#      绕开隧道直连, 表现为"打开用不了"。**双栈节点加 `?v6=on`** 打开(该变体按需现算, 不占缓存)。
+#   ① **关 v6 的做法(默认)**: tun 只配 v4 地址 + dns 里 AAAA 一律回 NOERROR 空答案 +
+#      dns.strategy=ipv4_only; clash 侧 ipv6:false。⚠️ **不再用「route 里 ip_version:6 → reject」**——
+#      2026-09-28 在 iOS 上实测那会让设备以为有 v6、App 去试 v6 后被拒 → 断网(见官方 issue #4434);
+#      单栈节点必须关, 否则客户端解析到真 v6 地址后绕开隧道直连, 表现为"打开用不了"。
+#      **双栈节点加 `?v6=on`** 打开(该变体按需现算, 不占缓存)。
 #   ② 键序/写法一律照 **sing-box 自己序列化出来的样子**(Go 结构体顺序 / Listable 单项写标量 /
 #      Go 时长写法), 所以 `sing-box format` 的输出与本服务输出逐字节相同, 用户对比不会有差异。
 #   ③ 去掉 tun 的 mtu/stack —— stack 官方 1.15 弃用、1.17 移除(迁移 = 直接删该字段);
@@ -834,9 +836,11 @@ def _hy2_outbound(node):
 def build_singbox(nodes, router_mode=False, v6_on=False):
     """sing-box 客户端配置。
 
-    v6_on=False(默认) = **关 IPv6 三层**: ①DNS 里 AAAA 一律回空 ②route 里 v6 整段拒
+    v6_on=False(默认) = **关 v6**: ①tun 只配 v4 地址(设备"没有 v6")②DNS 里 AAAA 一律回空
     ③dns.strategy=ipv4_only。单栈节点(自己的一键部署不给节点加 AAAA, 用户拍板"ipv6 路由很差")
     必须关, 否则客户端拿到真 v6 地址后绕开隧道直连, 表现为"打开用不了"。双栈节点加 `?v6=on`。
+    ⚠️ 不用「route 里 ip_version:6 → reject」那种"拒"法: 2026-09-28 实测 iOS 上抖音断网
+    (设备以为有 v6 → App 去试 → 被拒), 官方 issue #4434 同款机理。
 
     ⚠️ 键序与写法一律照 **sing-box 自己序列化出来的样子**(Go 结构体顺序 / Listable 单项写标量 /
     Go 时长写法) —— 这样 `sing-box format` 的输出与本配置逐字节相同, 用户拿它跟手头配置对比不会有差。
@@ -846,7 +850,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     qtypes = ['A', 'AAAA'] if v6_on else 'A'   # 关了 v6 就只查 A
 
     dns_rules = [
-        # 第一层关 v6: AAAA 一律回 NOERROR 空答案
+        # 关 v6 之一: AAAA 一律回 NOERROR 空答案
         *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
         {'clash_mode': 'direct', 'server': 'dns-direct'},
         {'clash_mode': 'global', 'server': 'dns-proxy'},
@@ -866,8 +870,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     ]
 
     route_rules = [
-        # ⚠️ DNS 劫持排在 clash_mode / v6-reject 之前(sing-box 1.14.2 实测: 排后面时 Direct/Global 模式下 DNS
-        #    被当普通流量; tun 派生出的 v6 接口 DNS 地址也会被 v6-reject 吃掉)
+        # ⚠️ DNS 劫持排在 clash_mode 之前(sing-box 1.14.2 实测: 排后面时 Direct/Global 模式下 DNS 被当普通流量)
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
         # v6 不在这里「拒」了(2026-09-28): 拒会回 RST, 系统反而以为 v6 可用、App 继续试 v6;
@@ -965,7 +968,7 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
         },
     }
     if not v6_on:
-        # 第三层关 v6: DNS 只解析 A(键序排在 final 之后 = sing-box 序列化顺序)
+        # 关 v6 之二: DNS 只解析 A(键序排在 final 之后 = sing-box 序列化顺序; 不是"拒")
         cfg['dns'] = {**cfg['dns'], 'strategy': 'ipv4_only'}
     return cfg
 
@@ -1148,7 +1151,7 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
     """规则集模式 sing-box: 复用 build_singbox 的骨架(outbounds/tun/DNS servers/http_clients/
     experimental 全同), 只换 dns.rules / route.rules / route.rule_set 三段(顺序对齐 rule.worker.js)。
     顺序铁律: private/dw-*-cn/apple 直连排最前 → google/microsoft/域名代理 → cn/geoip-cn 国内兜底 →
-    geolocation-!cn 境外兜底。关 v6 三层与硬编码模式同(见 build_singbox 文档串)。"""
+    geolocation-!cn 境外兜底。关 v6 的做法与硬编码模式同(见 build_singbox 文档串)。"""
     cfg = build_singbox(nodes, router_mode, v6_on)
     proxy_tag = 'proxy'
     node_hosts = list(dict.fromkeys(n['address'] for n in nodes))  # 去重(双节点常同域)
@@ -1157,7 +1160,7 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
     qtypes = ['A', 'AAAA'] if v6_on else 'A'
 
     dns_rules = [
-        # 第一层关 v6: AAAA 一律回 NOERROR 空答案
+        # 关 v6 之一: AAAA 一律回 NOERROR 空答案
         *([] if v6_on else [{'query_type': 'AAAA', 'action': 'predefined', 'rcode': 'NOERROR'}]),
         {'clash_mode': 'direct', 'server': 'dns-direct'},
         {'clash_mode': 'global', 'server': 'dns-proxy'},
@@ -1181,7 +1184,7 @@ def build_singbox_rules(nodes, router_mode=False, v6_on=False):
     ]
 
     route_rules = [
-        # ⚠️ DNS 劫持排在 clash_mode / v6-reject 之前(同上)
+        # ⚠️ DNS 劫持排在 clash_mode 之前(同上)
         {'action': 'sniff'},
         {'protocol': 'dns', 'action': 'hijack-dns'},
         # v6 不在这里「拒」了(2026-09-28): 拒会回 RST, 系统反而以为 v6 可用、App 继续试 v6;
