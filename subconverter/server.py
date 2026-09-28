@@ -899,10 +899,10 @@ def build_singbox(nodes, router_mode=False, v6_on=False):
     outbounds.append({'type': 'selector', 'tag': proxy_tag, 'outbounds': node_tags, 'default': node_tags[0]})
     outbounds.append({'type': 'direct', 'tag': 'direct'})
 
+    # 不写 dns_address(2026-09-28 用户要求去掉): 官方语义 = 从 address 里第一个 IPv4 后面那个地址派生,
+    #   address 只有 v4 时派生出来必然就是 172.19.0.2(见 rule.worker.js 同款注释)。
     tun = {'type': 'tun', 'tag': 'tun-in', 'interface_name': 'singbox',
-           'address': ['172.19.0.1/30'], 'auto_route': True,
-           # ⚠️ 只把 v4 的接口 DNS 地址告诉系统(见 rule.worker.js 同款注释): v6 那条实测走不通
-           'dns_address': _one(['172.19.0.2'])}
+           'address': _one(['172.19.0.1/30']), 'auto_route': True}
     if not router_mode:
         tun['strict_route'] = True      # 键序: sing-box 里 auto_redirect 排在 strict_route 前
     # 不写 mtu/stack = 走 sing-box 默认。⚠️ 路由模式**不能**再写 stack: sing-box 1.15 弃用、
