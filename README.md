@@ -57,6 +57,12 @@ curl -fsSL -o /tmp/setup.sh https://mirror.notebase.cn/download/setup.sh && sudo
 
 **IPv6 默认是关的**：一键部署出来的节点默认不带 IPv6 地址，所以配置里把 v6 关死了（DNS 里 AAAA 一律回空 + 路由里 v6 整段拒 + `dns.strategy: ipv4_only`，Clash 侧 `ipv6: false`）—— 不关的话客户端会解析到真 v6 地址、绕开隧道直连，表现就是「能连上但打不开」。**节点是双栈（域名有 AAAA）就加 `?v6=on` 打开**，sing-box 与 Clash 一起生效。
 
+**路由器上跑 sing-box（OpenWrt / iStoreOS / 软路由）要在订阅地址后面加 `&router=1`**：路由器版就是在 tun 入站里多一行 `"auto_redirect": true`（其余逐字节相同），作用是把 LAN 里其它设备的流量也自动重定向进 tun —— 不加的话只有路由器自己走代理，下面的电脑手机还是直连。
+
+> 手工改配置的话，记得自己给 `inbounds[].tun` 加这一行：`"auto_redirect": true`。
+> ⚠️ 同时**不要写 `stack` 字段** —— 官方从 1.15 起弃用、1.17 移除，写到 1.17 直接起不来；`auto_redirect` 只要求 Linux + `auto_route`，不依赖 `stack`。
+> ⚠️ `dns_address` 这类 Listable 字段单项时官方会序列化成**标量**（`"dns_address": "172.19.0.2"`，不是数组），自己手写时注意，跟官方 `sing-box format` 的输出对齐最稳。
+
 ## ② VPS 节点一键部署（hy2.sh）
 
 在全新 VPS 上部署 sing-box 节点，交互式选择协议：
