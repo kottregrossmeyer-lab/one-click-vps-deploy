@@ -27,6 +27,13 @@
 #   ③ 去掉 tun 的 mtu/stack —— stack 官方 1.15 弃用、1.17 移除(迁移 = 直接删该字段);
 #      auto_redirect 官方只要求 Linux + auto_route, 不依赖 stack。
 #
+# v5.4 (2026-10-10) 小火箭规则配置改「内嵌固定配置」(修 DNS 泄漏):
+#   老版实时拉 John Shall lazy.conf 去注释返回, 上游那份的 DNS 会泄漏(明文国内 DoH + 裸 IP +
+#   ipv6=true), 我们只是转发、一字未改。现内嵌用户 2026-10-10 定稿的配置(基底同上游, 改了 5 处,
+#   见 SHADOWROCKET_CONF 上方注释)。
+#   ⚠️ 与 CF worker sub-rules 的 SHADOWROCKET_CONF 逐字节一致, 两边必须一起改。
+#   ⚠️ raw=1 与默认输出不再有区别; 不再往 conf 注入节点行(节点走 base64 订阅导入, 本来就是两条链接分开用)。
+#
 # v5 (2026-08-21) 新增 Hysteria2 (HY2) 支持, 纯加法分支, VLESS-only 行为不变:
 #   - config.json 可加可选 rawHy2Url (hysteria2:// 或 hy2://)
 #   - HY2 支持端口跳跃: 单端口 / 端口段 a-b / 逗号混合 (sing-box: server_ports+hop_interval; clash: ports+hop-interval)
@@ -65,10 +72,89 @@ RULES_PROXY_DOMAIN_SETS = ['github', 'openai', 'telegram']   # 单项即标量: 
 
 # ─────────────────────────────────────────────────────────────
 # 小火箭(Shadowrocket)规则配置(2026-09-11 新增旁路, ?target=conf)
-# 规则不自己写轮子: 直接引用 John Shall 的 lazy.conf(实时拉取, 永远最新), 默认返回去注释的干净版;
-# ?raw=1 返回原样 + 在 [Proxy] 空段注入节点行。⚠️ 与 CF worker sub-rules 行为一致:
-# hysteria2 节点行 conf 表达不了(Shadowrocket 只能走 URI 订阅导入), 所以只写注释防断网。
-SHADOWROCKET_LAZY_CONF = 'https://johnshall.github.io/Shadowrocket-ADBlock-Rules-Forever/lazy.conf'
+# 🔴 2026-10-10 起为「内嵌固定配置」, 不再实时拉 John Shall lazy.conf:
+#    老版是拉上游 lazy.conf 去注释后原样返回 —— 规则一个字都不是我们写的, 所以上游那份的
+#    DNS 泄漏(明文国内 DoH + 裸 IP + ipv6=true)一字不差地传给了客户端。
+#    内嵌这份的基底同样是上游 lazy.conf 去注释版, 按用户 2026-10-10 定稿改了 5 处:
+#      ① DNS 防泄漏四行(direct-dns-server / DoT dns-server / DoT fallback / ipv6=false)
+#      ② skip-proxy 后缀写法 *.x → .x  ③ [Rule] 开头两条直连(perfops/byte-test)
+#      ④ [URL Rewrite] 补单引号  ⑤ 去掉 [Proxy] 与 [Proxy Group] 空段
+#    ⚠️ 必须与 CF worker sub-rules(~/rule.worker.js 的 SHADOWROCKET_CONF)**逐字节一致** ——
+#       同一天改的, 以后两边一起改; 校验 = 比对两边生成的小火箭配置 md5。
+#    ⚠️ `raw` 参数保留兼容: 现在与默认返回同一份(老 raw=1 = 上游原文 + 注入节点行)。
+SHADOWROCKET_CONF = NL.join([
+    "[General]",
+    "direct-dns-server = https://dns.alidns.com/dns-query,https://doh.pub/dns-query",
+    "skip-proxy = 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,localhost,.local,captive.apple.com,.ccb.com,.abchina.com.cn,.psbc.com,www.baidu.com,www.163.com",
+    "tun-excluded-routes = 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 255.255.255.255/32, 239.255.255.250/32, ff02::fb/128",
+    "dns-server = tls://1.1.1.1,tls://8.8.8.8",
+    "fallback-dns-server = tls://8.8.4.4,tls://1.0.0.1",
+    "ipv6 = false",
+    "prefer-ipv6 = false",
+    "dns-direct-system = false",
+    "icmp-auto-reply = true",
+    "always-reject-url-rewrite = false",
+    "private-ip-answer = true",
+    "dns-direct-fallback-proxy = true",
+    "hijack-dns = 8.8.8.8:53,8.8.4.4:53",
+    "udp-policy-not-supported-behaviour = REJECT",
+    "block-quic = all-proxy",
+    "",
+    "[Rule]",
+    "DOMAIN-SUFFIX,perfops.cloudflareperf.com,DIRECT",
+    "DOMAIN-SUFFIX,byte-test.com,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/iab0x00/ProxyRules/main/Rule/AI.txt,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/YouTube/YouTube.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Netflix/Netflix.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Disney/Disney.list,PROXY",
+    "DOMAIN-SUFFIX,litix.io,PROXY",
+    "DOMAIN-SUFFIX,discomax.com,PROXY",
+    "DOMAIN-SUFFIX,brightline.tv,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/HBO/HBO.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Spotify/Spotify.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Telegram/Telegram.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/PayPal/PayPal.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Twitter/Twitter.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Facebook/Facebook.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Amazon/Amazon.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Sony/Sony.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Nintendo/Nintendo.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Epic/Epic.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/SteamCN/SteamCN.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Steam/Steam.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Game/Game.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/GitHub/GitHub.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Microsoft/Microsoft.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Google/Google.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Apple/Apple.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/BiliBili/BiliBili.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/NetEaseMusic/NetEaseMusic.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Baidu/Baidu.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/DouBan/DouBan.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/WeChat/WeChat.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Sina/Sina.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Zhihu/Zhihu.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/XiaoHongShu/XiaoHongShu.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/DouYin/DouYin.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/TikTok/TikTok.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/Global/Global.list,PROXY",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/QuantumultX/China/China.list,DIRECT",
+    "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Lan/Lan.list,DIRECT",
+    "GEOIP,CN,DIRECT",
+    "FINAL,PROXY",
+    "",
+    "[Host]",
+    "*.apple.com = server:system",
+    "*.icloud.com = server:system",
+    "localhost = 127.0.0.1",
+    "",
+    "[URL Rewrite]",
+    "'^https?://(www.)?g.cn' 'https://www.google.com' 302",
+    "'^https?://(www.)?google.cn' 'https://www.google.com' 302",
+    "",
+    "[MITM]",
+    "hostname = *.google.cn"
+]) + NL
 SHADOWROCKET_CACHE_TTL = 3600
 
 
@@ -1256,96 +1342,24 @@ def build_clash_rules(nodes, v6_on=False):
     return NL.join(out) + NL
 
 
-def _sr_node_line(node):
-    """Shadowrocket conf 节点行。hysteria2 只能注释(conf 表达不了端口跳跃/auth 语义, 实测导入会断网),
-    vless(Reality) 正常注入。与 CF worker sub-rules 的 shadowrocketNodeLine 逐字对齐。"""
-    name = re.sub(r'[,\r\n]', '', str(node.get('name') or 'node'))
-    if node.get('type') == 'hysteria2':
-        line = '# ' + name + ' = hysteria2,' + str(node['address']) + ',' + str(node.get('port')) + ',auth=' + str(node.get('password'))
-        if node.get('obfs') and node.get('obfs_password'):
-            line += ',obfsParam=' + str(node['obfs']) + ':' + str(node['obfs_password'])
-        alpn = (node.get('alpn') or ['h3'])[0] or 'h3'
-        peer = node.get('sni') or node['address']
-        line += ',udp=1,peer=' + str(peer) + ',alpn=' + str(alpn)
-        if node.get('insecure'):
-            line += ',allowInsecure=1'
-        return line
-    if node.get('type') == 'vless' or node.get('uuid'):
-        line = name + ' = vless,' + str(node['address']) + ',' + str(node.get('port')) + \
-               ',password=' + str(node.get('uuid')) + ',encryption=none,udp=1'
-        peer = node.get('sni') or node['address']
-        flow = (',flow=' + str(node['flow'])) if node.get('flow') else ''
-        line += ',tls=true,peer=' + str(peer) + flow
-        return line
-    return None
-
-
-def _sr_clean_conf(conf):
-    """去全部 # 注释行与空行(Section 之间保留一个空行) —— 与 worker cleanConf 同语义。"""
-    out = []
-    for raw in str(conf or '').split('\n'):
-        t = raw.strip()
-        if t == '' or t.startswith('#'):
-            continue
-        if t.startswith('[') and out and out[-1] != '':
-            out.append('')
-        out.append(raw)
-    while out and out[-1] == '':
-        out.pop()
-    return '\n'.join(out) + '\n'
-
-
-def _sr_fetch_lazy():
-    """拉 John Shall lazy.conf; 10 秒超时, 失败返回 None(调用方退回最小可用配置)。"""
-    try:
-        req = urllib.request.Request(SHADOWROCKET_LAZY_CONF, headers={'User-Agent': 'subconverter/5.2'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.read().decode('utf-8', 'replace')
-    except Exception:
-        return None
-
-
 _sr_cache = {'stamp': None, 'ts': 0.0, 'body': None}
 
 
 def get_shadowrocket(c, raw=False):
     """小火箭规则配置(旁路, 按需生成 + 1 小时缓存)。
-    clean(默认): lazy.conf 去注释纯规则版, [Proxy] 保持空段(节点由 base64 订阅导入);
-    raw=1: lazy.conf 逐字节原样 + 在 [Proxy] 空段注入节点行(vless 注入 / hysteria2 注释)。
-    拉不到上游时退回最小配置(节点 + FINAL,PROXY), 保证客户端永远有可用的东西。"""
+
+    🔴 2026-10-10 起为「内嵌固定配置」, 不再实时拉 John Shall lazy.conf —— 内容与 CF worker
+    sub-rules(~/rule.worker.js 的 SHADOWROCKET_CONF)逐字节一致, 两边一起改。
+    老版拉上游去注释后原样返回, 自己一字未写, 所以上游的 DNS 泄漏被原样转发; 现已修。
+
+    `raw` 参数保留兼容: 现在与默认返回同一份(老 raw=1 是懒人配置原文 + 注入节点行)。
+    老实现里的 _sr_clean_conf / _sr_fetch_lazy / _sr_node_line 随内嵌一并移除。
+    """
     stamp = (c.get('mtime', 0), bool(raw))
     if _sr_cache.get('stamp') == stamp and _sr_cache.get('body') is not None \
             and (time.time() - _sr_cache.get('ts', 0.0)) < SHADOWROCKET_CACHE_TTL:
         return _sr_cache['body']
-
-    node_lines = []
-    if c.get('raw_hy2'):
-        node_lines.append(_sr_node_line(parse_hysteria2(c['raw_hy2'], 'HY2')))
-    if c.get('raw_vless'):
-        v = parse_vless(c['raw_vless'])
-        v['name'] = c.get('node_name') or 'node'
-        node_lines.append(_sr_node_line(v))
-    node_lines = [x for x in node_lines if x]
-
-    body = None
-    lazy = _sr_fetch_lazy()
-    if lazy:
-        if not raw:
-            body = _sr_clean_conf(lazy)
-        else:
-            marker = '[Proxy]'
-            idx = lazy.find(marker)
-            if idx >= 0:
-                line_end = lazy.find('\n', idx)
-                inject_at = line_end + 1 if line_end >= 0 else len(lazy)
-                body = lazy[:inject_at] + '\n'.join(node_lines) + '\n' + lazy[inject_at:]
-            else:
-                body = lazy
-    if body is None:
-        minimal = '\n'.join(['[General]', 'dns-server = system', '[Proxy]'] + node_lines +
-                            ['[Rule]', 'FINAL,PROXY']) + '\n'
-        body = _sr_clean_conf(minimal) if not raw else minimal
-
+    body = SHADOWROCKET_CONF
     _sr_cache['stamp'] = stamp
     _sr_cache['ts'] = time.time()
     _sr_cache['body'] = body
