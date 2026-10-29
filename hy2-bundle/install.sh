@@ -18,8 +18,16 @@ BOLD=$'\033[1m'
 NC=$'\033[0m'
 
 # ========== 发行版检测 ==========
-OS_ID=$(grep -E '^ID=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
-OS_LIKE=$(grep -E '^ID_LIKE=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1)
+# ⚠️ 末尾的 || true 不能删: Debian 的 /etc/os-release **没有 ID_LIKE 这行**, grep 返回 1,
+# 在 set -e + pipefail 下赋值失败 → 脚本**一个字都不打就退出**(2026-10-29 实测: Debian 12 全军覆没)。
+# 同理, 任何"允许取不到值"的 命令替换 | 管道 都必须带 || true。
+OS_ID=$(grep -E '^ID=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1 || true)
+OS_LIKE=$(grep -E '^ID_LIKE=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' | head -1 || true)
+if [[ -z "$OS_ID" ]]; then
+    echo "!! 读不到 /etc/os-release 的 ID 字段, 无法识别发行版" >&2
+    echo "   需要 Debian/Ubuntu 系或 RHEL 系(带 systemd 与包管理器)的新一点系统" >&2
+    exit 1
+fi
 case "$OS_ID" in
     debian|ubuntu) OS_FAMILY="debian"; ADMIN_GROUP="sudo" ;;
     rhel|almalinux|rocky|ol|centos|fedora) OS_FAMILY="rhel"; ADMIN_GROUP="wheel" ;;
@@ -228,7 +236,8 @@ else
             CERT_MODE="le"
 
             echo -e "${RED}⚠️  请先将 ${NODE_HOST} 的 A 记录指向本机 IP: ${SERVER_IP}${NC}"
-            RESOLVED=$(getent hosts "$NODE_HOST" 2>/dev/null | awk '{print $1}' | head -1)
+            # || true: getent 解析不到时返回非 0, pipefail 下会直接静默退出(下面本来就要处理"解析不到")
+            RESOLVED=$(getent hosts "$NODE_HOST" 2>/dev/null | awk '{print $1}' | head -1 || true)
             if [[ -n "$RESOLVED" && "$RESOLVED" != "$SERVER_IP" ]]; then
                 echo -e "${RED}⚠️  警告: ${NODE_HOST} 当前解析到 ${RESOLVED},与本机 ${SERVER_IP} 不一致,证书申请会失败${NC}"
                 read -p "继续? (${YELLOW}回车=否, y=强续${NC}): " FORCE
@@ -371,7 +380,7 @@ echo -e "${GREEN}>> 等待包管理器锁释放 (最多 ${max_wait}s)...${NC}"
     systemctl stop unattended-upgrades apt-daily.timer apt-daily-upgrade.timer packagekit dnf-automatic 2>/dev/null || true
     sleep 5
     local holder
-    holder=$(fuser $lock_paths 2>/dev/null | awk '{print $1}' | head -1)
+    holder=$(fuser $lock_paths 2>/dev/null | awk '{print $1}' | head -1 || true)   # fuser 无进程时返回 1, 必须 || true
     if [[ -n "$holder" ]]; then
         echo "!! 仍有进程持锁 (PID $holder), 强制结束..."
         kill -9 "$holder" 2>/dev/null || true
@@ -481,7 +490,7 @@ echo -e "${GREEN}>> hk 下载失败,回退 GitHub ...${NC}"
     fi
     tar xzf /tmp/sing-box.tar.gz -C /tmp
     # hk 包内层直接是 sing-box 二进制;GitHub 包带版本目录,find 兜底
-    SBIN=$(find /tmp -maxdepth 3 -name sing-box -type f 2>/dev/null | head -1)
+    SBIN=$(find /tmp -maxdepth 3 -name sing-box -type f 2>/dev/null | head -1 || true)
     [[ -n "$SBIN" ]] || { echo "!! 未找到 sing-box 二进制" >&2; exit 1; }
     install -m 755 "$SBIN" /usr/bin/sing-box
     rm -f /tmp/sing-box.tar.gz
@@ -596,9 +605,31 @@ fi
 echo -e "${GREEN}>> sing-box 已启动${NC}"
 
 # ========== 10-12. 配置防火墙 ==========
+# 🔴 SSH 端口绝不能写死 22(2026-10-29 血泪: 一台 SSH 在 3791 的机器, ufw 启用后
+# 新连接全部被拒 —— 只放行了 22, 当场把自己和用户锁在门外, 只能走云控制台 VNC 救)。
+# 探测顺序: 当前 SSH 连接的服务器端口(最准) → sshd 实际监听端口 → sshd_config → 22
+detect_ssh_port() {
+    local p=""
+    if [[ -n "${SSH_CONNECTION:-}" ]]; then
+        p=$(awk '{print $4}' <<< "$SSH_CONNECTION" || true)
+    fi
+    if [[ -z "$p" ]]; then
+        p=$(ss -tlnp 2>/dev/null | awk '/sshd/ {n=split($4,a,":"); print a[n]; exit}' || true)
+    fi
+    if [[ -z "$p" ]]; then
+        p=$(grep -rhE '^[[:space:]]*Port[[:space:]]+[0-9]+' \
+              /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null \
+            | awk '{print $2; exit}' || true)
+    fi
+    [[ "$p" =~ ^[0-9]+$ ]] || p=22
+    printf '%s' "$p"
+}
+SSH_PORT=$(detect_ssh_port)
+
 if [[ "$OS_FAMILY" == "debian" ]]; then
 echo -e "${CYAN}===== 10. 配置 ufw 端口 =====${NC}"
-    ufw allow 22/tcp
+    ufw allow "${SSH_PORT}/tcp"
+echo -e "${GREEN}>> 已放行 SSH 端口 ${SSH_PORT}/tcp (防锁死)${NC}"
     if [[ "$PROTO" == "2" ]]; then
         ufw allow "${LISTEN_PORT}/tcp"
     else
@@ -636,7 +667,8 @@ echo -e "${CYAN}===== 10. 配置 firewalld =====${NC}"
         dnf install -y firewalld
         systemctl enable --now firewalld
     fi
-    firewall-cmd --permanent --add-service=ssh   # 兜底防锁死
+    firewall-cmd --permanent --add-service=ssh   # 兜底防锁死(标准 22)
+    firewall-cmd --permanent --add-port="${SSH_PORT}/tcp"   # 非 22 端口的 SSH 也要放行
     if [[ "$PROTO" == "2" ]]; then
         firewall-cmd --permanent --add-port="${LISTEN_PORT}/tcp"
     else
@@ -745,7 +777,9 @@ fi
 echo ""
 echo -e "${CYAN}===== 17. 恢复系统自动更新 =====${NC}"
 if [[ "$OS_FAMILY" == "debian" ]]; then
-    systemctl enable --now unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null
+    # || true: 镜像里没装 unattended-upgrades 时这行会失败, set -e 下会让脚本在"部署已完成"后
+    # 以 rc=1 静默退出(2026-10-29 实测), 用户看不到最后的分享/SSH 提醒
+    systemctl enable --now unattended-upgrades apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
 echo -e "${GREEN}>> 已恢复: unattended-upgrades + apt-daily 定时更新${NC}"
 else
     systemctl enable --now packagekit dnf-automatic 2>/dev/null || true
