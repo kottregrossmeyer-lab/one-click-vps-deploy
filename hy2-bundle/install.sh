@@ -726,6 +726,12 @@ fi
 echo -e "${CYAN}===== 14. 生成分享链接 =====${NC}"
 chmod +x "$SCRIPT_DIR/get_link.sh"
 SHARE_LINK=$("$SCRIPT_DIR/get_link.sh" "$NODE_NAME")
+# 落盘: 关掉窗口 / 重启(/tmp 被清) 之后还能找回节点链接(2026-10-29 用户问)
+#   - /etc/sing-box/share_link  = 本次生成的链接原文
+#   - /usr/local/bin/get-link   = 从 /etc/sing-box 重新生成链接的工具
+install -m 755 "$SCRIPT_DIR/get_link.sh" /usr/local/bin/get-link 2>/dev/null || true
+printf '%s\n' "$SHARE_LINK" > /etc/sing-box/share_link 2>/dev/null || true
+chmod 600 /etc/sing-box/share_link 2>/dev/null || true
 echo ""
 echo -e "${CYAN}${BOLD}========================================${NC}"
 echo -e "${GREEN}${BOLD}        ✓ 节点部署完成 ✓${NC}"
@@ -733,6 +739,8 @@ echo -e "${CYAN}${BOLD}========================================${NC}"
 echo ""
 echo -e "  ${GREEN}📥 分享链接 ${YELLOW}(填入客户端, 自动识别协议)${NC}:"
 echo -e "    ${MAGENTA}${BOLD}${SHARE_LINK}${NC}"
+echo ""
+echo -e "  ${YELLOW}以后忘了/关了窗口:${NC} cat /etc/sing-box/share_link   ${YELLOW}或${NC} get-link \"\$(cat /etc/sing-box/node_name)\""
 echo ""
 
 echo ""
