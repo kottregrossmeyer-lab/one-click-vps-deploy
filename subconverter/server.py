@@ -1110,7 +1110,7 @@ def _clash_hy2_lines(node, q):
     return lines
 
 
-def build_clash(nodes, v6_on=False):
+def build_clash(nodes, v6_on=False, dns_split=False):
     q = lambda s: json.dumps(str(s), ensure_ascii=False)
 
     proxy = []
@@ -1140,6 +1140,52 @@ def build_clash(nodes, v6_on=False):
     rules.append('GEOIP,CN,DIRECT')  # GEOIP 兜底: 解析出中国IP即直连
     rules.append('MATCH,PROXY')
 
+    # DNS 段(2026-11-01 防泄漏): 规则集模式用 rule-set 分流; 硬编码模式没有 rule-providers,
+    # 写 rule-set 会加载失败, 故保持原样(国内 DoH)。
+    dns_lines = [
+        '  use-hosts: true',
+    ]
+    if dns_split:
+        dns_lines += [
+            '  cache-algorithm: arc',
+            '  prefer-h3: false',
+            '  use-system-hosts: true',
+            '  respect-rules: false',
+        ]
+    dns_lines += [
+        '  default-nameserver:',
+        f'    - {DNS["bootstrap"]}',
+        '    - 119.29.29.29',
+    ]
+    if dns_split:
+        dns_lines += [
+            '  nameserver:',
+            '    - "https://1.1.1.1/dns-query#PROXY"',
+            '    - "https://8.8.8.8/dns-query#PROXY"',
+            '  nameserver-policy:',
+            '    "rule-set:cn":',
+            '      - "https://doh.pub/dns-query"',
+            '      - "https://dns.alidns.com/dns-query"',
+            '    "rule-set:private":',
+            '      - "https://doh.pub/dns-query"',
+            '    "rule-set:dw-microsoft-cn":',
+            '      - "https://doh.pub/dns-query"',
+            '    "rule-set:dw-apple-cn":',
+            '      - "https://doh.pub/dns-query"',
+            '  proxy-server-nameserver:',
+            '    - "https://doh.pub/dns-query"',
+            '  direct-nameserver:',
+            '    - "https://doh.pub/dns-query"',
+            '    - "https://dns.alidns.com/dns-query"',
+            '  direct-nameserver-follow-policy: false',
+        ]
+    else:
+        dns_lines += [
+            '  nameserver:',
+            '    - "https://doh.pub/dns-query"',
+            '    - "https://dns.alidns.com/dns-query"',
+        ]
+
     lines = [
         'mixed-port: 7890',
         'allow-lan: true',
@@ -1156,13 +1202,7 @@ def build_clash(nodes, v6_on=False):
         f'  ipv6: {"true" if v6_on else "false"}',
         '  enhanced-mode: fake-ip',
         '  fake-ip-range: 198.18.0.1/16',
-        '  use-hosts: true',
-        '  default-nameserver:',
-        f'    - {DNS["bootstrap"]}',
-        '    - 119.29.29.29',
-        '  nameserver:',
-        '    - "https://doh.pub/dns-query"',
-        '    - "https://dns.alidns.com/dns-query"',
+        *dns_lines,
         '  fake-ip-filter:',
         '    - "*.lan"',
         '    - localhost.ptlogin2.qq.com',
@@ -1314,7 +1354,7 @@ def build_clash_rules(nodes, v6_on=False):
     """规则集模式 clash: 复用 build_clash 的骨架(节点/组/DNS 段逐字节同), 把结尾 rules: 段替换为
     rule-providers(mrs) + RULE-SET 规则。"""
     q = lambda s: json.dumps(str(s), ensure_ascii=False)
-    lines = build_clash(nodes, v6_on).rstrip(NL).split(NL)
+    lines = build_clash(nodes, v6_on, dns_split=True).rstrip(NL).split(NL)
     out = lines[:lines.index('rules:')] + ['rule-providers:']
     for name, behavior, url, path in _rules_clash_providers():
         out += ['  ' + q(name) + ':',
