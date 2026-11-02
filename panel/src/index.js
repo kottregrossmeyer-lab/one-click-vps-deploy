@@ -11,7 +11,6 @@ import PAGE from './page.html';
 const DEFAULT_BASE = 'https://raw.githubusercontent.com/kottregrossmeyer-lab/one-click-vps-deploy/main';
 const SCRIPTS = {
   setup: { path: '/subconverter/setup.sh', label: 'setup.sh', env: 'SETUP_URL' },
-  nexus: { path: '/nexus.sh', label: 'nexus.sh', env: 'NEXUS_URL' },
   hy2: { path: '/hy2-bundle/hy2.sh', label: 'hy2.sh', env: 'HY2_URL' },
 };
 const scriptUrl = (env, key) => env[SCRIPTS[key].env] || (env.SCRIPT_BASE || DEFAULT_BASE) + SCRIPTS[key].path;

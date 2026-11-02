@@ -77,9 +77,8 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div style="margin-top:12px"><label data-i="key">…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)</label><textarea id="key" spellcheck="false"></textarea></div>
 <div class="grid" style="margin-top:12px">
 <div><label data-i="script">Script</label><select id="script">
-<option value="setup" data-i="o_setup">setup.sh — subscription converter</option>
-<option value="hy2" data-i="o_hy2">hy2.sh — VPS sing-box node (HY2/VLESS)</option>
-<option value="nexus" data-i="o_nexus">nexus.sh — Proxmox: create a VM (run on a PVE host)</option></select></div>
+<option value="hy2" data-i="o_hy2" selected>VPS one-click setup</option>
+<option value="setup" data-i="o_setup">Subscription converter</option></select></div>
 </div>
 <div id="f-setup" style="margin-top:12px"><div class="grid">
 <div><label data-i="link">Node link 1 (vless:// or hysteria2://) *</label><input id="link" autocomplete="off"></div>
@@ -87,13 +86,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="hp">HTTPS port (blank = 51200)</label><input id="hp"></div>
 <div><label data-i="hp2">HTTP port (blank = HTTPS+1)</label><input id="hp2"></div>
 <div><label data-i="pip">Public IP (blank = auto-detect)</label><input id="pip"></div></div></div>
-<div id="f-ans" class="hide" style="margin-top:12px">
-<div id="hy2form" class="hide"></div>
-<div id="manualans">
-<label data-i="ans">Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.</label>
-<textarea id="ans" spellcheck="false" data-ph="ans_ph"></textarea>
-<div class="warn" data-i="ans_warn">hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.</div>
-</div></div>
+<div id="f-ans" class="hide" style="margin-top:12px"><div id="hy2form" class="hide"></div></div>
 <div class="row"><label style="margin:0"><input type="checkbox" id="dry" style="width:auto"> <span data-i="dry">Dry run (download + syntax check only, nothing executed)</span></label></div>
 <div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
 <div class="warn" style="margin-top:8px" data-i="priv">Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.</div>
@@ -115,13 +108,11 @@ const I={
   pubQuota:'Public · {daily} runs per IP per day · <b>{n}</b> left today',
   host:'VPS host / IP',port:'SSH port',user:'SSH user',pw:'Password',
   key:'…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)',
-  script:'Script',o_setup:'setup.sh — subscription converter',o_hy2:'hy2.sh — VPS sing-box node (HY2/VLESS)',o_nexus:'nexus.sh — Proxmox: create a VM (run on a PVE host)',
+  script:'Service',o_setup:'Subscription converter',o_hy2:'VPS one-click setup',
   link:'Node link 1 (vless:// or hysteria2://) *',link2:'Node link 2 (optional, the other protocol)',hp:'HTTPS port (blank = 51200)',hp2:'HTTP port (blank = HTTPS+1)',pip:'Public IP (blank = auto-detect)',
-  ans:"Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.",ans_ph:'(empty = take every default)',
-  ans_warn:"hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.",
-  g_hint:'These are the prompts hy2.sh asks, in order — blank means press Enter for the default.',
+  g_hint:'These are the prompts the script asks, in order — blank means press Enter for the default.',
   g_user:'Create a new user?',go_user_n:'No',go_user_y:'Yes',g_uname:'New username',g_upass:'New password',
-  g_proto:'Protocol',go_proto_1:'Hysteria2 (UDP + port hopping)',go_proto_2:'VLESS + Reality (TCP)',
+  g_proto:'Protocol',go_proto_1:'Hysteria2 (UDP)',go_proto_2:'VLESS + Reality',
   g_port:'Listen port',g_portend:'Port-hop end port',g_reality:'Reality target site',
   g_nodepw:'Node password (blank = generate)',g_obfs:'Obfs password (blank = generate)',
   g_name:'Node name (blank = auto-detect country)',g_host:'Node address (blank = auto-detect)',
@@ -149,13 +140,11 @@ const I={
   pubQuota:'公开使用 · 每个 IP 每天 {daily} 次 · 今天还剩 <b>{n}</b> 次',
   host:'VPS 主机 / IP',port:'SSH 端口',user:'SSH 用户',pw:'密码',
   key:'…或填写 SSH 私钥（PKCS8 PEM，以 PRIVATE KEY 开头；可选，填写后优先于密码）',
-  script:'脚本',o_setup:'setup.sh — 订阅转换服务',o_hy2:'hy2.sh — VPS 节点（sing-box，HY2/VLESS）',o_nexus:'nexus.sh — Proxmox 新建虚拟机（需在 PVE 宿主机上运行）',
+  script:'服务',o_setup:'订阅转换服务',o_hy2:'VPS 一键部署服务',
   link:'节点链接 1（vless:// 或 hysteria2://）*',link2:'节点链接 2（可选，另一种协议）',hp:'HTTPS 端口（留空 = 51200）',hp2:'HTTP 端口（留空 = HTTPS 端口 + 1）',pip:'公网 IP（留空 = 自动检测）',
-  ans:'脚本提示的预设回答，每行一个（空行 = 采用默认值）。脚本会以非交互方式运行，这些回答通过标准输入喂给它。',ans_ph:'（留空 = 全部采用默认值）',
-  ans_warn:'hy2.sh / nexus.sh 会改动 SSH/用户设置或创建虚拟机，请先试运行，并看清脚本的提示内容。',
-  g_hint:'下面就是 hy2.sh 会依次问的问题，按顺序喂给脚本；留空 = 直接回车取默认值。',
+  g_hint:'下面就是脚本会依次问的问题，按顺序喂给它；留空 = 直接回车取默认值。',
   g_user:'创建新用户？',go_user_n:'不创建',go_user_y:'创建',g_uname:'新用户名',g_upass:'新用户密码',
-  g_proto:'协议',go_proto_1:'Hysteria2（UDP + 端口跳跃）',go_proto_2:'VLESS + Reality（TCP）',
+  g_proto:'协议',go_proto_1:'Hysteria2（UDP）',go_proto_2:'VLESS + Reality',
   g_port:'监听端口',g_portend:'端口跳跃结束端口',g_reality:'Reality 目标网站',
   g_nodepw:'节点密码（留空=自动生成）',g_obfs:'混淆密码（留空=自动生成）',
   g_name:'节点名称（留空=自动检测地区）',g_host:'节点地址（留空=自动检测）',
@@ -271,7 +260,6 @@ const sel=()=>{const s=$('script').value;
  $('f-setup').classList.toggle('hide',s!=='setup');
  $('f-ans').classList.toggle('hide',s==='setup');
  $('hy2form').classList.toggle('hide',s!=='hy2');
- $('manualans').classList.toggle('hide',s==='hy2');
  if(s==='hy2'){if(!HY2V.user)hy2Defaults();renderHy2()}};
 $('script').onchange=sel;sel();
 let cur=null,running=false,buf='';
@@ -316,7 +304,7 @@ async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=fals
  showResult();running=false;$('go').disabled=$('gostream').disabled=false;$('cancel').disabled=true}
 async function run(stream){if(running)return;buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
  const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,
-  args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():$('ans').value}};
+  args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():[]}};
  try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream)}
  catch(e){setSt(()=>L('err')+e.message,'err')}}
 async function resume(j){if(running)return;buf='';paint();await follow(j,0,false)}
