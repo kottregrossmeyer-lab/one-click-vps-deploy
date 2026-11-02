@@ -1,0 +1,11 @@
+{
+  "name": "vps-deploy-panel",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "edgeport": "^1.0.6"
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.2"
+  }
+}

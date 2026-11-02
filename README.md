@@ -1,6 +1,6 @@
 # one-click-vps-deploy — sing-box / Hysteria2 / VLESS+Reality 一键部署全家桶
 
-> 一套开箱即用的一键脚本：VPS 节点部署、订阅转换服务、PVE 虚拟机创建。零依赖、多发行版、所有凭据部署时现场生成，仓库不含任何密钥。
+> 一套开箱即用的一键脚本：VPS 节点部署、订阅转换服务、PVE 虚拟机创建，外加一个网页面板。零依赖、多发行版、所有凭据部署时现场生成，仓库不含任何密钥。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![ci](https://github.com/kottregrossmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/kottregrossmeyer-lab/one-click-vps-deploy/actions/workflows/ci.yml)
@@ -14,6 +14,7 @@
 | 1 | `subconverter/setup.sh` | 订阅转换服务（sing-box / Clash / v2rayN） |
 | 2 | `hy2-bundle/hy2.sh` | VPS 节点一键部署（Hysteria2 / VLESS+Reality） |
 | 3 | `nexus.sh` | PVE 虚拟机一键创建 |
+| 4 | `panel/` | 网页版：浏览器里连 VPS 跑上面三个脚本（Cloudflare Worker，无需本地环境） |
 
 支持系统：Debian 12/13、Ubuntu 20.04–24.04、RHEL 9 / Rocky 9 / AlmaLinux 9（amd64 / arm64）。
 
@@ -90,6 +91,26 @@ curl -fsSL -o /tmp/hy2.sh https://mirror.notebase.cn/bundle/hy2.sh && sudo bash 
 ```bash
 curl -fsSL -o /tmp/nexus.sh https://mirror.notebase.cn/download/nexus.sh && sudo bash /tmp/nexus.sh
 ```
+
+## ④ 网页面板（panel/）
+
+不想开终端、或者人在手机上：打开 <https://deploy.notebase.cn>，填 IP / 端口 / 账号（或私钥），选一个脚本点运行，日志实时回来，最后把订阅链接一条条挑出来、标明用途、一键复制。
+
+- 跑在 Cloudflare Workers 上，**不用在本机装任何东西**，手机浏览器也能用
+- 三个脚本就是上面那三个，脚本地址在服务端写死；面板不能执行任意命令
+- 密码只用一次、不落库；刷新后要继续看日志靠一个 AES-GCM 加密的 6 小时票据，存在你自己浏览器里
+- 公开实例每个 IP 每天 5 次（可自己部署一份，额度/令牌都可在 `wrangler.toml` 里改）
+
+自己部署：
+
+```bash
+cd panel
+npm install
+npx wrangler deploy
+npx wrangler secret put TICKET_KEY         # openssl rand -hex 32
+```
+
+细节（公开/私有模式、额度、自定义域名、限制）见 [panel/README.md](panel/README.md)。
 
 ## 🔒 安全说明
 

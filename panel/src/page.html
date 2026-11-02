@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VPS deploy panel</title>
+<style>
+:root{--bg:#0f1115;--card:#171a21;--bd:#2a2f3a;--fg:#e6e9ef;--mut:#8b93a3;--acc:#4f8cff;--ok:#3ecf8e;--bad:#ff6b6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px;position:relative}h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+input,textarea,select{width:100%;background:#0c0e12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}
+textarea{font-family:ui-monospace,Consolas,monospace;min-height:64px}
+button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:9px 16px;font:inherit;cursor:pointer}button.sec{background:#2a2f3a}button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px;min-height:220px;max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-all;font:12px/1.45 ui-monospace,Consolas,monospace;margin:0}
+.reshd{display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:13px;color:var(--fg)}
+.reshd .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(62,207,142,.13);flex:none}
+.hit{padding:11px 0;border-top:1px solid var(--bd)}.hit:first-child{border-top:0;padding-top:2px}
+.hk{font-size:12px;color:var(--mut);margin-bottom:6px}.hk b{color:var(--fg);font-weight:600}
+.hv{display:flex;align-items:flex-start;gap:8px}.hv a{flex:1;min-width:0;color:var(--fg);text-decoration:none;font:12px/1.55 ui-monospace,Consolas,monospace;word-break:break-all;opacity:.92}
+.hv a:hover{color:var(--acc);text-decoration:underline}
+.hv .cp{flex:none;padding:4px 10px;font-size:12px;border-radius:6px;margin-top:-2px}
+.st{color:var(--mut);margin:8px 0}.err{color:var(--bad)}.hide{display:none}.warn{color:#f0b429;font-size:12px}
+.jobs .jobrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--bd);min-width:0}
+.jobs .jobrow:first-child{border-top:0;padding-top:3px}
+.jobs .jinfo{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-size:12px;line-height:1.5}
+.jobs .jid{font-family:ui-monospace,Consolas,monospace;color:var(--fg)}
+.jobs .jtag{color:var(--fg);opacity:.85}
+.jobs .jmeta{color:var(--mut);overflow-wrap:anywhere}
+.jobs .jbtn{flex:none;padding:5px 12px;font-size:12px;border-radius:6px}
+@media (max-width:560px){.jobs .jobrow{gap:8px}.jobs .jbtn{padding:5px 10px}}
+.quota{font-size:12px;color:var(--mut);margin:-8px 0 16px;line-height:1.6}
+.quota b{color:var(--fg);font-weight:600}
+.hint{font-size:12px;color:var(--mut);margin-top:10px;line-height:1.6}
+.hint code{font-family:ui-monospace,Consolas,monospace;background:#0c0e12;border:1px solid var(--bd);border-radius:4px;padding:1px 5px;font-size:11px}
+.lang{position:absolute;right:12px;top:10px;z-index:30}
+.langbtn{display:inline-flex;align-items:center;gap:7px;background:transparent;border:1px solid transparent;color:var(--mut);padding:7px 10px;border-radius:9px;font:inherit;font-size:13px;line-height:1;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.langbtn:hover,.langbtn[aria-expanded="true"]{background:#1c212a;border-color:var(--bd);color:var(--fg)}
+.langbtn:focus-visible{outline:2px solid rgba(79,140,255,.55);outline-offset:2px}
+.langbtn .ic{width:15px;height:15px;flex:none;opacity:.85}
+.langbtn .chev{width:12px;height:12px;flex:none;opacity:.6;transition:transform .18s ease}
+.langbtn[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.langmenu{position:absolute;right:0;top:calc(100% + 8px);min-width:158px;padding:5px;background:#191d25;border:1px solid var(--bd);border-radius:11px;box-shadow:0 18px 40px -12px rgba(0,0,0,.75),0 2px 8px rgba(0,0,0,.35);opacity:0;transform:translateY(-6px) scale(.97);transform-origin:top right;pointer-events:none;transition:opacity .16s ease,transform .16s ease}
+.langmenu.open{opacity:1;transform:none;pointer-events:auto}
+.langmenu .opt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;background:transparent;border:0;border-radius:7px;color:var(--fg);padding:8px 10px;font:inherit;font-size:13px;cursor:pointer;text-align:left}
+.langmenu .opt:hover,.langmenu .opt:focus-visible{background:#242a34;outline:none}
+.langmenu .opt .tick{width:14px;height:14px;flex:none;color:var(--acc);opacity:0;transition:opacity .1s}
+.langmenu .opt[aria-selected="true"] .tick{opacity:1}
+@media (max-width:640px){h1{padding-right:112px}.lang{right:6px;top:6px}}
+</style></head><body><main>
+<div class="lang" id="lang">
+<button class="langbtn" id="langbtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
+<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18"/><path d="M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>
+<span id="langlabel">English</span>
+<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+</button>
+<div class="langmenu" id="langmenu" role="listbox" aria-label="Language">
+<button class="opt" type="button" role="option" data-lang="en" aria-selected="true"><span>English</span><svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></button>
+<button class="opt" type="button" role="option" data-lang="zh" aria-selected="false"><span>中文</span><svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></button>
+</div>
+</div>
+<h1 data-i="title">VPS deploy panel</h1>
+<div class="sub" data-i="sub">Runs a whitelisted one-click script on <b>your</b> VPS over SSH, from a Cloudflare Worker. Nothing is stored server-side.</div>
+<div class="quota" id="quota" hidden></div>
+
+<div class="card hide" id="tokcard"><label data-i="token">Access token</label><div class="row" style="margin:0"><input id="tok" type="password" autocomplete="off" style="max-width:360px"><button class="sec" id="savetok" data-i="save">Save</button></div><div class="hint" id="tokhint">Public mode: no token needed — each IP gets 5 runs per day.</div></div>
+
+<div class="card jobs hide" id="jobscard"><b data-i="recent">Recent jobs (this browser)</b><div id="jobs"></div></div>
+
+<div class="card">
+<div class="grid">
+<div><label data-i="host">VPS host / IP</label><input id="host" placeholder="203.0.113.10"></div>
+<div><label data-i="port">SSH port</label><input id="port" value="22"></div>
+<div><label data-i="user">SSH user</label><input id="user" value="root"></div>
+<div><label data-i="pw">Password</label><input id="pw" type="password" autocomplete="off"></div>
+</div>
+<div style="margin-top:12px"><label data-i="key">…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)</label><textarea id="key" spellcheck="false"></textarea></div>
+<div class="grid" style="margin-top:12px">
+<div><label data-i="script">Script</label><select id="script">
+<option value="setup" data-i="o_setup">setup.sh — subscription converter</option>
+<option value="hy2" data-i="o_hy2">hy2.sh — VPS sing-box node (HY2/VLESS)</option>
+<option value="nexus" data-i="o_nexus">nexus.sh — Proxmox: create a VM (run on a PVE host)</option></select></div>
+</div>
+<div id="f-setup" style="margin-top:12px"><div class="grid">
+<div><label data-i="link">Node link 1 (vless:// or hysteria2://) *</label><input id="link" autocomplete="off"></div>
+<div><label data-i="link2">Node link 2 (optional, the other protocol)</label><input id="link2" autocomplete="off"></div>
+<div><label data-i="hp">HTTPS port (blank = 51200)</label><input id="hp"></div>
+<div><label data-i="hp2">HTTP port (blank = HTTPS+1)</label><input id="hp2"></div>
+<div><label data-i="pip">Public IP (blank = auto-detect)</label><input id="pip"></div></div></div>
+<div id="f-ans" class="hide" style="margin-top:12px"><label data-i="ans">Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.</label><textarea id="ans" spellcheck="false" data-ph="ans_ph"></textarea>
+<div class="warn" data-i="ans_warn">hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.</div></div>
+<div class="row"><label style="margin:0"><input type="checkbox" id="dry" style="width:auto"> <span data-i="dry">Dry run (download + syntax check only, nothing executed)</span></label></div>
+<div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
+<div class="warn" style="margin-top:8px" data-i="priv">Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.</div>
+</div>
+
+<div class="card"><div class="st" id="st">idle</div>
+<div class="res card hide" id="res"><div class="reshd"><span class="dot"></span><b data-i="result">Result</b></div><div id="resbody"></div></div>
+<pre id="log"></pre></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const I={
+ en:{
+  docTitle:'VPS deploy panel',title:'VPS deploy panel',
+  sub:'Runs a whitelisted one-click script on <b>your</b> VPS over SSH, from a Cloudflare Worker. Nothing is stored server-side.',
+  token:'Access token',save:'Save',recent:'Recent jobs (this browser)',
+  tokenHelp:'Public mode: no token needed — each IP gets {daily} runs per day. Deployers can paste their own token for unlimited use.',
+  pubLeft:'Runs left today for this IP: <b>{n}</b>',ownerMode:'Deployer mode · unlimited runs',tokenOpt:'Access token (optional)',
+  pubQuota:'Public · {daily} runs per IP per day · <b>{n}</b> left today',
+  host:'VPS host / IP',port:'SSH port',user:'SSH user',pw:'Password',
+  key:'…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)',
+  script:'Script',o_setup:'setup.sh — subscription converter',o_hy2:'hy2.sh — VPS sing-box node (HY2/VLESS)',o_nexus:'nexus.sh — Proxmox: create a VM (run on a PVE host)',
+  link:'Node link 1 (vless:// or hysteria2://) *',link2:'Node link 2 (optional, the other protocol)',hp:'HTTPS port (blank = 51200)',hp2:'HTTP port (blank = HTTPS+1)',pip:'Public IP (blank = auto-detect)',
+  ans:"Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.",ans_ph:'(empty = take every default)',
+  ans_warn:"hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.",
+  dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
+  priv:"Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.",
+  result:'Result',copied:'Copied',
+  k_http_t:'HTTP subscription',k_http_d:'Use this when the TLS cert is self-signed — no need to skip verification',
+  k_https_t:'HTTPS subscription',k_https_d:'Preferred when the cert is valid; the format follows the client',
+  k_rules_t:'Rules-mode subscription',k_rules_d:'Same nodes, routing switched to the self-hosted rule set, updates itself',
+  k_conf_t:'Shadowrocket rules',k_conf_d:'Shadowrocket needs both: nodes from a subscription above, routing from this .conf. You can rename the last path segment',
+  k_clash_t:'Clash subscription',k_clash_d:'Forces Clash / Mihomo YAML output',k_other_t:'Link',k_other_d:'',
+  idle:'idle',starting:'connecting + launching (~3s)…',job:'job',streaming:'streaming… ',streamEnd:'stream ended',finished:'finished, exit=',running:'running… ',
+  err:'error: ',cancelRes:'cancel: ',cancelErr:'cancel error: ',resume:'Resume',copy:'Copy',dryTag:' (dry)',killed:'job killed',nothing:'nothing to kill (job may have finished)',
+  langLabel:'Language'
+ },
+ zh:{
+  docTitle:'VPS 一键部署面板',title:'VPS 一键部署面板',
+  sub:'通过 Cloudflare Worker 的 SSH，在<b>你自己的</b> VPS 上运行白名单内的一键脚本。服务端不保存任何内容。',
+  token:'访问令牌',save:'保存',recent:'最近的任务（仅限本浏览器）',
+  tokenHelp:'公开模式：不用令牌也能用，每个 IP 每天 {daily} 次；部署者贴上自己的令牌可无限次。',
+  pubLeft:'这个 IP 今天还剩 <b>{n}</b> 次',ownerMode:'部署者模式 · 不限次数',tokenOpt:'访问令牌（可选）',
+  pubQuota:'公开使用 · 每个 IP 每天 {daily} 次 · 今天还剩 <b>{n}</b> 次',
+  host:'VPS 主机 / IP',port:'SSH 端口',user:'SSH 用户',pw:'密码',
+  key:'…或填写 SSH 私钥（PKCS8 PEM，以 PRIVATE KEY 开头；可选，填写后优先于密码）',
+  script:'脚本',o_setup:'setup.sh — 订阅转换服务',o_hy2:'hy2.sh — VPS 节点（sing-box，HY2/VLESS）',o_nexus:'nexus.sh — Proxmox 新建虚拟机（需在 PVE 宿主机上运行）',
+  link:'节点链接 1（vless:// 或 hysteria2://）*',link2:'节点链接 2（可选，另一种协议）',hp:'HTTPS 端口（留空 = 51200）',hp2:'HTTP 端口（留空 = HTTPS 端口 + 1）',pip:'公网 IP（留空 = 自动检测）',
+  ans:'脚本提示的预设回答，每行一个（空行 = 采用默认值）。脚本会以非交互方式运行，这些回答通过标准输入喂给它。',ans_ph:'（留空 = 全部采用默认值）',
+  ans_warn:'hy2.sh / nexus.sh 会改动 SSH/用户设置或创建虚拟机，请先试运行，并看清脚本的提示内容。',
+  dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
+  priv:'账号信息经 HTTPS 发给 Worker，仅用于建立 SSH 连接。为了刷新页面后能继续查看任务，它们会被加密（AES-GCM，6 小时有效）成一个凭证，保存在本浏览器的 localStorage 中。',
+  result:'结果',copied:'已复制',
+  k_http_t:'HTTP 订阅',k_http_d:'自签证书时用这个，客户端不用跳过证书校验',
+  k_https_t:'HTTPS 订阅',k_https_d:'证书正常时首选；返回什么格式由客户端自动识别',
+  k_rules_t:'规则集模式订阅',k_rules_d:'同一批节点，分流换成自托管规则集，规则自动更新',
+  k_conf_t:'小火箭规则',k_conf_d:'小火箭要两条：节点用上面的订阅，分流用这条 conf；最后一段名字可改，保留 .conf 结尾',
+  k_clash_t:'Clash 订阅',k_clash_d:'强制返回 Clash / Mihomo 的 YAML',k_other_t:'其他链接',k_other_d:'',
+  idle:'空闲',starting:'正在连接并启动任务（约 3 秒）…',job:'任务',streaming:'实时输出中… ',streamEnd:'实时输出已结束',finished:'已结束，退出码 ',running:'运行中… ',
+  err:'错误：',cancelRes:'取消：',cancelErr:'取消失败：',resume:'继续查看',copy:'复制',dryTag:'（试运行）',killed:'已终止任务',nothing:'没有可终止的进程（任务可能已结束）',
+  langLabel:'语言'
+ }
+};
+let LANG=localStorage.getItem('dp-lang')==='zh'?'zh':'en';
+let INFO=null;
+function renderTokenHint(){
+ const card=$('tokcard'),q=$('quota'),el=$('tokhint');
+ const pub=!!(INFO&&INFO.public),own=!!(INFO&&INFO.owner);
+ const lab=document.querySelector('[data-i="token"]');if(lab)lab.textContent=pub?L('tokenOpt'):L('token');
+ if(pub){card.classList.add('hide');q.hidden=false;
+  q.innerHTML=own?L('ownerMode'):L('pubQuota').replace('{daily}',(INFO&&INFO.daily)||5).replace('{n}',(INFO&&INFO.left!=null)?INFO.left:'-');
+ }else{q.hidden=true;card.classList.toggle('hide',!!TOKEN);
+  if(el)el.innerHTML=L('tokenHelp').replace('{daily}',(INFO&&INFO.daily)||5);}
+}
+async function loadInfo(){try{const r=await fetch('/api/info',{headers:{'x-lang':LANG,'x-token':TOKEN||''}});if(r.ok){INFO=await r.json();renderTokenHint()}}catch(e){}}
+const L=k=>I[LANG][k]||I.en[k]||k;
+let stFn=()=>L('idle');
+function setSt(fn,cls){stFn=fn;const el=$('st');el.className='st '+(cls||'');el.textContent=fn()}
+function applyLang(){
+ document.documentElement.lang=LANG==='en'?'en':'zh-CN';
+ document.title=L('docTitle');
+ document.querySelectorAll('[data-i]').forEach(e=>{e.innerHTML=L(e.dataset.i)});
+ document.querySelectorAll('[data-ph]').forEach(e=>{e.placeholder=L(e.dataset.ph)});
+ document.querySelectorAll('[data-al]').forEach(e=>{e.setAttribute('aria-label',L(e.dataset.al))});
+ $('langlabel').textContent=LANG==='en'?'English':'中文';
+ $('langbtn').setAttribute('aria-label',L('langLabel'));
+ document.querySelectorAll('#langmenu .opt').forEach(o=>o.setAttribute('aria-selected',o.dataset.lang===LANG?'true':'false'));
+ $('st').textContent=stFn();
+ renderTokenHint();
+ renderJobs();
+}
+const qs=new URLSearchParams(location.search);
+let TOKEN=qs.get('t')||localStorage.getItem('dp-token')||'';
+if(qs.get('t')){localStorage.setItem('dp-token',TOKEN);history.replaceState(null,'',location.pathname)}
+$('tok').value=TOKEN; if(TOKEN)$('tokcard').classList.add('hide');
+$('savetok').onclick=()=>{TOKEN=$('tok').value.trim();localStorage.setItem('dp-token',TOKEN);$('tokcard').classList.add('hide');loadInfo()};
+let langOpen=false;
+function setLangOpen(v){langOpen=v;$('langmenu').classList.toggle('open',v);$('langbtn').setAttribute('aria-expanded',v?'true':'false')}
+$('langbtn').onclick=e=>{e.stopPropagation();setLangOpen(!langOpen)};
+$('langmenu').onclick=e=>e.stopPropagation();
+document.querySelectorAll('#langmenu .opt').forEach(b=>b.onclick=()=>{LANG=b.dataset.lang;localStorage.setItem('dp-lang',LANG);applyLang();setLangOpen(false);$('langbtn').focus()});
+document.addEventListener('click',()=>{if(langOpen)setLangOpen(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&langOpen){setLangOpen(false);$('langbtn').focus()}});
+const api=async(path,body,raw)=>{const r=await fetch('/api/'+path,{method:'POST',headers:{'content-type':'application/json','x-token':TOKEN,'x-lang':LANG},body:JSON.stringify(body)});
+ if(raw&&r.ok)return r; const j=await r.json().catch(()=>({error:'HTTP '+r.status})); if(!r.ok||j.error){const e=new Error(j.error||('HTTP '+r.status));e.status=r.status;throw e} return j};
+const strip=s=>s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g,'').replace(/\r/g,'');
+const sel=()=>{const s=$('script').value;$('f-setup').classList.toggle('hide',s!=='setup');$('f-ans').classList.toggle('hide',s==='setup')};$('script').onchange=sel;sel();
+let cur=null,running=false,buf='';
+const jobs=()=>JSON.parse(localStorage.getItem('dp-jobs')||'[]').filter(j=>j.expires>Date.now());
+const saveJob=j=>{const a=jobs().filter(x=>x.id!==j.id);a.unshift(j);localStorage.setItem('dp-jobs',JSON.stringify(a.slice(0,8)));renderJobs()};
+function renderJobs(){const a=jobs();$('jobscard').classList.toggle('hide',!a.length);$('jobs').innerHTML='';
+ a.forEach(j=>{const row=document.createElement('div');row.className='jobrow';
+  const info=document.createElement('div');info.className='jinfo';
+  const id=document.createElement('span');id.className='jid';id.textContent=j.id;
+  const tag=document.createElement('span');tag.className='jtag';tag.textContent=j.script+(j.dry?L('dryTag'):'');
+  const meta=document.createElement('span');meta.className='jmeta';meta.textContent='@ '+j.host+' · '+new Date(j.started).toLocaleTimeString(LANG==='zh'?'zh-CN':'en-US');
+  info.append(id,tag,meta);
+  const b=document.createElement('button');b.className='sec jbtn';b.textContent=L('resume');b.onclick=()=>resume(j);
+  row.append(info,b);$('jobs').appendChild(row)})}
+function kindOf(u){const x=u.toLowerCase();
+ if(/\.conf($|[?#\/])/.test(x))return 'conf';
+ if(/[?&]mode=rules\b/.test(x))return 'rules';
+ if(/[?&]target=clash\b/.test(x))return 'clash';
+ if(/[?&]target=(singbox|sing-box)\b/.test(x))return 'singbox';
+ return x.startsWith('https://')?'https':'http'}
+function showResult(){const t=strip(buf);const urls=[...new Set((t.match(/https?:\/\/[^\s"'<>，。（）]+/g)||[]).filter(u=>/Shadowrocket|\.conf|\/sub|clash|singbox|v2ray/i.test(u)||/:\d{4,5}\/[A-Za-z0-9_-]{16,}/.test(u)))];
+ $('res').classList.toggle('hide',!urls.length);const b=$('resbody');b.innerHTML='';
+ urls.forEach(u=>{const k=kindOf(u);const row=document.createElement('div');row.className='hit';
+  const hk=document.createElement('div');hk.className='hk';const nm=document.createElement('b');const proto=u.startsWith('https://')?'HTTPS':'HTTP';nm.textContent=L('k_'+k+'_t')+(k==='rules'?(LANG==='zh'?'（'+proto+'）':' ('+proto+')'):'');hk.appendChild(nm);
+  const hint=L('k_'+k+'_d');if(hint)hk.appendChild(document.createTextNode(' · '+hint));
+  const hv=document.createElement('div');hv.className='hv';
+  const a=document.createElement('a');a.href=u;a.textContent=u;a.target='_blank';a.rel='noreferrer';
+  const c=document.createElement('button');c.className='sec cp';c.textContent=L('copy');
+  c.onclick=()=>navigator.clipboard.writeText(u).then(()=>{c.textContent=L('copied');setTimeout(()=>{c.textContent=L('copy')},1200)});
+  hv.append(a,c);row.append(hk,hv);b.appendChild(row)})}
+function paint(){const el=$('log');const atEnd=el.scrollTop+el.clientHeight>=el.scrollHeight-20;el.textContent=strip(buf);if(atEnd)el.scrollTop=el.scrollHeight}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=false;$('go').disabled=$('gostream').disabled=true;const t0=Date.now();
+ try{
+  if(stream){const r=await api('stream',{ticket:j.ticket,off},true);const rd=r.body.getReader(),d=new TextDecoder('utf-8');
+   for(;;){const{value,done}=await rd.read();if(done)break;buf+=d.decode(value,{stream:true});paint();setSt(()=>L('job')+' '+j.id+' '+L('streaming')+((Date.now()-t0)/1000|0)+'s')}
+   buf+=d.decode();paint();setSt(()=>L('job')+' '+j.id+' '+L('streamEnd'))}
+  else for(;;){const s=await api('status',{ticket:j.ticket,off});buf+=s.text;off=s.next;paint();
+   setSt(()=>L('job')+' '+j.id+' '+(s.done?L('finished')+s.code:L('running')+((Date.now()-t0)/1000|0)+'s'),s.done&&s.code!==0?'err':'');
+   if(s.done){break}await sleep(3000)}
+ }catch(e){setSt(()=>L('err')+e.message,'err')}
+ showResult();running=false;$('go').disabled=$('gostream').disabled=false;$('cancel').disabled=true}
+async function run(stream){if(running)return;buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
+ const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,
+  args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('ans').value}};
+ try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream)}
+ catch(e){setSt(()=>L('err')+e.message,'err')}}
+async function resume(j){if(running)return;buf='';paint();await follow(j,0,false)}
+$('go').onclick=()=>run(false);$('gostream').onclick=()=>run(true);
+$('cancel').onclick=async()=>{if(!cur)return;try{const r=await api('cancel',{ticket:cur.ticket});setSt(()=>L('cancelRes')+(/killed/.test(r.result)?L('killed'):L('nothing')))}catch(e){setSt(()=>L('cancelErr')+e.message,'err')}};
+applyLang();
+loadInfo();
+</script></body></html>
