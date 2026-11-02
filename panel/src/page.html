@@ -121,6 +121,7 @@ const I={
   g_domain:'Domain',g_email:'LE email (blank = admin@domain)',g_ip:'Node address (blank = auto)',
   g_sshmode:'SSH login',go_sshmode_1:'Password',go_sshmode_2:'Public key',g_pubkey:'SSH public key',
   g_sub:'Subscription type',go_sub_y:'Smart routing config (recommended)',go_sub_n:'Raw node subscription',
+  g_sport:'Subscription HTTPS port',g_sport2:'Subscription HTTP port',
   sub_desc_y:'Ships the full routing ruleset — recommended for Clash, sing-box and Shadowrocket.',
   sub_desc_n:'Raw node links only (VLESS / HY2), no routing rules.',
   dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
@@ -156,6 +157,7 @@ const I={
   g_domain:'域名',g_email:'LE 邮箱（留空=admin@域名）',g_ip:'节点地址（留空=自动）',
   g_sshmode:'SSH 登录方式',go_sshmode_1:'密码登录',go_sshmode_2:'公钥登录',g_pubkey:'SSH 公钥',
   g_sub:'订阅类型',go_sub_y:'智能分流配置（推荐）',go_sub_n:'原始节点订阅',
+  g_sport:'订阅服务 HTTPS 端口',g_sport2:'订阅服务 HTTP 端口',
   sub_desc_y:'提供完整的分流规则，推荐 Clash、Sing-box、小火箭客户端使用。',
   sub_desc_n:'仅输出纯节点链接（含 VLESS / HY2），不含分流规则。',
   dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
@@ -233,7 +235,9 @@ const HY2=[
  {k:'ip',t:'text',show:v=>v.proto!=='2'&&v.connect!=='2'},
  {k:'sshmode',t:'select',opts:[['1','go_sshmode_1'],['2','go_sshmode_2']],def:'1',show:v=>v.user==='y'},
  {k:'pubkey',t:'textarea',show:v=>v.user==='y'&&v.sshmode==='2'},
- {k:'sub',t:'select',opts:[['y','go_sub_y'],['n','go_sub_n']],def:'y',desc:true}
+ {k:'sub',t:'select',opts:[['y','go_sub_y'],['n','go_sub_n']],def:'y',desc:true},
+ {k:'sport',t:'number',def:'51200',show:v=>v.sub!=='n'},
+ {k:'sport2',t:'number',def:'51201',show:v=>v.sub!=='n'}
 ];
 let HY2V={};
 function hy2Defaults(){HY2V={};HY2.forEach(f=>HY2V[f.k]=f.def||'')}
@@ -264,7 +268,9 @@ function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
   if(v.connect==='2'){a.push(v.domain||'');a.push(v.email||'')}
   else{a.push(v.ip||'')}}
  if(y){a.push(v.sshmode==='2'?'2':'');if(v.sshmode==='2')a.push(v.pubkey||'')}
- a.push('y');a.push(v.sub==='n'?'n':'');
+ a.push('y');
+ if(v.sub==='n'){a.push('n')}
+ else{a.push('');a.push('');a.push('');a.push(v.sport||'51200');a.push(v.sport2||'51201')}
  return a}
 const sel=()=>{const s=$('script').value;
  $('f-setup').classList.toggle('hide',s!=='setup');
@@ -291,7 +297,8 @@ function kindOf(u){const x=u.toLowerCase();
  if(/[?&]target=clash\b/.test(x))return 'clash';
  if(/[?&]target=(singbox|sing-box)\b/.test(x))return 'singbox';
  return x.startsWith('https://')?'https':'http'}
-function showResult(){const t=strip(buf);const urls=[...new Set([...(t.match(/https?:\/\/[^\s"'<>，。（）]+/g)||[]).filter(u=>/Shadowrocket|\.conf|\/sub|clash|singbox|v2ray/i.test(u)||/:\d{4,5}\/[A-Za-z0-9_-]{16,}/.test(u)),...(t.match(/(?:vless|hysteria2|hy2|trojan|vmess):\/\/[^\s"'<>]+/g)||[])])];
+function showResult(){const t=strip(buf);const clean=u=>u.replace(/[)\]）】，,.;；]+$/,'');
+ const urls=[...new Set([...(t.match(/https?:\/\/[^\s"'<>，。（）]+/g)||[]).filter(u=>/Shadowrocket|\.conf|\/sub|clash|singbox|v2ray/i.test(u)||/:\d{4,5}\/[A-Za-z0-9_-]{16,}/.test(u)),...(t.match(/(?:vless|hysteria2|hy2|trojan|vmess):\/\/[^\s"'<>]+/g)||[])].map(clean))];
  $('res').classList.toggle('hide',!urls.length);const b=$('resbody');b.innerHTML='';
  urls.forEach(u=>{const k=kindOf(u);const row=document.createElement('div');row.className='hit';
   const hk=document.createElement('div');hk.className='hk';const nm=document.createElement('b');const proto=u.startsWith('https://')?'HTTPS':'HTTP';nm.textContent=L('k_'+k+'_t')+(k==='rules'?(LANG==='zh'?'（'+proto+'）':' ('+proto+')'):'');hk.appendChild(nm);
