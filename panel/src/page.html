@@ -31,6 +31,15 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 @media (max-width:560px){.jobs .jobrow{gap:8px}.jobs .jbtn{padding:5px 10px}}
 .quota{font-size:12px;color:var(--mut);margin:-8px 0 16px;line-height:1.6}
 .quota b{color:var(--fg);font-weight:600}
+.swrow{display:flex;align-items:center;gap:16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--bd)}
+.swrow .txt{flex:1;min-width:0}
+.swrow .t{font-size:13px;color:var(--fg)}
+.swrow .s{font-size:12px;color:var(--mut);line-height:1.5;margin-top:3px}
+.switch{position:relative;flex:none;width:40px;height:22px;border-radius:999px;background:#2a2f3a;border:0;padding:0;cursor:pointer;transition:background .18s}
+.switch::after{content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.45);transition:transform .18s ease}
+.switch[aria-checked="true"]{background:var(--acc)}
+.switch[aria-checked="true"]::after{transform:translateX(18px)}
+.switch:focus-visible{outline:2px solid rgba(79,140,255,.55);outline-offset:2px}
 .hint{font-size:12px;color:var(--mut);margin-top:10px;line-height:1.6}
 .hint code{font-family:ui-monospace,Consolas,monospace;background:#0c0e12;border:1px solid var(--bd);border-radius:4px;padding:1px 5px;font-size:11px}
 .lang{position:absolute;right:12px;top:10px;z-index:30}
@@ -87,7 +96,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="hp2">HTTP port (blank = HTTPS+1)</label><input id="hp2"></div>
 <div><label data-i="pip">Public IP (blank = auto-detect)</label><input id="pip"></div></div></div>
 <div id="f-ans" class="hide" style="margin-top:12px"><div id="hy2form" class="hide"></div></div>
-<div class="row"><label style="margin:0"><input type="checkbox" id="dry" style="width:auto"> <span data-i="dry">Dry run (download + syntax check only, nothing executed)</span></label></div>
+<div class="swrow"><div class="txt"><div class="t" data-i="drytitle">Dry run</div><div class="s" data-i="dry">Dry run (download + syntax check only, nothing executed)</div></div><button class="switch" id="drysw" type="button" role="switch" aria-checked="false" data-al="drytitle"></button></div>
 <div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
 <div class="warn" style="margin-top:8px" data-i="priv">Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.</div>
 </div>
@@ -119,8 +128,8 @@ const I={
   g_connect:'Connection',go_connect_1:'Direct IP (self-signed cert)',go_connect_2:'Domain (Let\'s Encrypt)',
   g_domain:'Domain',g_email:'LE email (blank = admin@domain)',g_ip:'Node address (blank = auto)',
   g_sshmode:'SSH login',go_sshmode_1:'Password',go_sshmode_2:'Public key',g_pubkey:'SSH public key',
-  g_sub:'Also generate subscription links?',go_sub_y:'Yes (deploy the converter)',go_sub_n:'No (share link only)',
-  dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
+  g_sub:'Subscription links',g_sub_s:'Also deploy the subscription converter on the target and print smart-routing subscription links. Off = only the node share link.',
+  dry:'Download the script and run <code>bash -n</code> only — nothing is executed',drytitle:'Dry run',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
   priv:"Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.",
   result:'Result',copied:'Copied',
   k_http_t:'HTTP subscription',k_http_d:'Use this when the TLS cert is self-signed — no need to skip verification',
@@ -152,8 +161,8 @@ const I={
   g_connect:'连接方式',go_connect_1:'IP 直连（自签证书）',go_connect_2:'域名（申请 LE 证书）',
   g_domain:'域名',g_email:'LE 邮箱（留空=admin@域名）',g_ip:'节点地址（留空=自动）',
   g_sshmode:'SSH 登录方式',go_sshmode_1:'密码登录',go_sshmode_2:'公钥登录',g_pubkey:'SSH 公钥',
-  g_sub:'输出智能分流通用订阅链接？',go_sub_y:'要（顺带部署订阅转换）',go_sub_n:'不要（只给节点链接）',
-  dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
+  g_sub:'生成订阅链接',g_sub_s:'在目标机顺带部署订阅转换服务，输出智能分流的通用订阅地址；关掉则只给节点分享链接。',
+  dry:'只下载脚本并做 <code>bash -n</code> 语法检查，不执行任何内容',drytitle:'试运行',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
   priv:'账号信息经 HTTPS 发给 Worker，仅用于建立 SSH 连接。为了刷新页面后能继续查看任务，它们会被加密（AES-GCM，6 小时有效）成一个凭证，保存在本浏览器的 localStorage 中。',
   result:'结果',copied:'已复制',
   k_http_t:'HTTP 订阅',k_http_d:'自签证书时用这个，客户端不用跳过证书校验',
@@ -228,14 +237,16 @@ const HY2=[
  {k:'ip',t:'text',show:v=>v.proto!=='2'&&v.connect!=='2'},
  {k:'sshmode',t:'select',opts:[['1','go_sshmode_1'],['2','go_sshmode_2']],def:'1',show:v=>v.user==='y'},
  {k:'pubkey',t:'textarea',show:v=>v.user==='y'&&v.sshmode==='2'},
- {k:'sub',t:'select',opts:[['y','go_sub_y'],['n','go_sub_n']],def:'y'}
+ {k:'sub',t:'switch',def:'y'}
 ];
 let HY2V={};
 function hy2Defaults(){HY2V={};HY2.forEach(f=>HY2V[f.k]=f.def||'')}
 function renderHy2(){const box=$('hy2form');box.innerHTML='';
  const intro=document.createElement('div');intro.className='hint';intro.style.margin='0 0 12px';intro.textContent=L('g_hint');box.appendChild(intro);
  const g=document.createElement('div');g.className='grid';box.appendChild(g);
+ const extras=[];
  HY2.forEach(f=>{if(f.show&&!f.show(HY2V))return;
+  if(f.t==='switch'){extras.push(f);return}
   const d=document.createElement('div');const l=document.createElement('label');l.textContent=L('g_'+f.k);d.appendChild(l);
   let el;
   if(f.t==='select'){el=document.createElement('select');f.opts.forEach(([v,key])=>{const o=document.createElement('option');o.value=v;o.textContent=L(key);if((HY2V[f.k]||f.def)===v)o.selected=true;el.appendChild(o)});}
@@ -243,7 +254,17 @@ function renderHy2(){const box=$('hy2form');box.innerHTML='';
   else{el=document.createElement('input');el.type=f.t==='password'?'password':f.t==='number'?'number':'text';el.value=HY2V[f.k]||'';}
   const on=()=>{HY2V[f.k]=el.value;if(f.t==='select'){HY2V[f.k]=el.value;renderHy2()}};
   if(f.t==='select')el.onchange=on;else el.oninput=on;
-  d.appendChild(el);g.appendChild(d)})}
+  d.appendChild(el);g.appendChild(d)});
+ extras.forEach(f=>{const row=document.createElement('div');row.className='swrow';
+  const txt=document.createElement('div');txt.className='txt';
+  const ti=document.createElement('div');ti.className='t';ti.textContent=L('g_'+f.k);
+  const su=document.createElement('div');su.className='s';su.textContent=L('g_'+f.k+'_s');
+  txt.append(ti,su);
+  const sw=document.createElement('button');sw.className='switch';sw.type='button';sw.setAttribute('role','switch');
+  const on=()=>HY2V[f.k]!=='n';
+  sw.setAttribute('aria-checked',on()?'true':'false');
+  sw.onclick=()=>{HY2V[f.k]=on()?'n':'y';sw.setAttribute('aria-checked',on()?'true':'false')};
+  row.append(txt,sw);box.appendChild(row)})}
 function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
  a.push(y?'y':'');
  if(y){a.push(v.uname||'');a.push(v.upass||'')}
@@ -266,6 +287,8 @@ const sel=()=>{const s=$('script').value;
  if(s==='hy2'){if(!HY2V.user)hy2Defaults();renderHy2()}};
 $('script').onchange=sel;sel();
 let cur=null,running=false,buf='';
+let DRY=false;
+$('drysw').onclick=()=>{DRY=!DRY;$('drysw').setAttribute('aria-checked',DRY?'true':'false')};
 const jobs=()=>JSON.parse(localStorage.getItem('dp-jobs')||'[]').filter(j=>j.expires>Date.now());
 const saveJob=j=>{const a=jobs().filter(x=>x.id!==j.id);a.unshift(j);localStorage.setItem('dp-jobs',JSON.stringify(a.slice(0,8)));renderJobs()};
 function renderJobs(){const a=jobs();$('jobscard').classList.toggle('hide',!a.length);$('jobs').innerHTML='';
@@ -307,7 +330,7 @@ async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=fals
  }catch(e){setSt(()=>L('err')+e.message,'err')}
  showResult();running=false;$('go').disabled=$('gostream').disabled=false;$('cancel').disabled=true}
 async function run(stream){if(running)return;buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
- const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,
+ const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:DRY,
   args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():[]}};
  try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream)}
  catch(e){setSt(()=>L('err')+e.message,'err')}}
