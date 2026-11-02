@@ -172,10 +172,10 @@ function renderTokenHint(){
  const lab=document.querySelector('[data-i="token"]');if(lab)lab.textContent=pub?L('tokenOpt'):L('token');
  if(pub){card.classList.add('hide');q.hidden=false;
   q.innerHTML=own?L('ownerMode'):L('pubQuota').replace('{daily}',(INFO&&INFO.daily)||5).replace('{n}',(INFO&&INFO.left!=null)?INFO.left:'-');
- }else{q.hidden=true;card.classList.toggle('hide',!!TOKEN);
+ }else{q.hidden=true;if(INFO)card.classList.toggle('hide',!!TOKEN);
   if(el)el.innerHTML=L('tokenHelp').replace('{daily}',(INFO&&INFO.daily)||5);}
 }
-async function loadInfo(){try{const r=await fetch('/api/info',{headers:{'x-lang':LANG,'x-token':TOKEN||''}});if(r.ok){INFO=await r.json();renderTokenHint()}}catch(e){}}
+async function loadInfo(){try{const r=await fetch('/api/info',{headers:{'x-lang':LANG,'x-token':TOKEN||''}});if(r.ok){INFO=await r.json();renderTokenHint()}else{INFO={public:false,owner:false};renderTokenHint()}}catch(e){INFO={public:false,owner:false};renderTokenHint()}}
 const L=k=>I[LANG][k]||I.en[k]||k;
 let stFn=()=>L('idle');
 function setSt(fn,cls){stFn=fn;const el=$('st');el.className='st '+(cls||'');el.textContent=fn()}
