@@ -87,8 +87,13 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="hp">HTTPS port (blank = 51200)</label><input id="hp"></div>
 <div><label data-i="hp2">HTTP port (blank = HTTPS+1)</label><input id="hp2"></div>
 <div><label data-i="pip">Public IP (blank = auto-detect)</label><input id="pip"></div></div></div>
-<div id="f-ans" class="hide" style="margin-top:12px"><label data-i="ans">Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.</label><textarea id="ans" spellcheck="false" data-ph="ans_ph"></textarea>
-<div class="warn" data-i="ans_warn">hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.</div></div>
+<div id="f-ans" class="hide" style="margin-top:12px">
+<div id="hy2form" class="hide"></div>
+<div id="manualans">
+<label data-i="ans">Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.</label>
+<textarea id="ans" spellcheck="false" data-ph="ans_ph"></textarea>
+<div class="warn" data-i="ans_warn">hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.</div>
+</div></div>
 <div class="row"><label style="margin:0"><input type="checkbox" id="dry" style="width:auto"> <span data-i="dry">Dry run (download + syntax check only, nothing executed)</span></label></div>
 <div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
 <div class="warn" style="margin-top:8px" data-i="priv">Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.</div>
@@ -114,6 +119,15 @@ const I={
   link:'Node link 1 (vless:// or hysteria2://) *',link2:'Node link 2 (optional, the other protocol)',hp:'HTTPS port (blank = 51200)',hp2:'HTTP port (blank = HTTPS+1)',pip:'Public IP (blank = auto-detect)',
   ans:"Answers to the script's prompts, one per line (blank line = accept the default). The script runs non-interactively with these fed to stdin.",ans_ph:'(empty = take every default)',
   ans_warn:"hy2.sh / nexus.sh change SSH/user settings or create VMs. Use a dry run first and read the script's prompts.",
+  g_hint:'These are the prompts hy2.sh asks, in order — blank means press Enter for the default.',
+  g_user:'Create a new user?',go_user_n:'No',go_user_y:'Yes',g_uname:'New username',g_upass:'New password',
+  g_proto:'Protocol',go_proto_1:'Hysteria2 (UDP + port hopping)',go_proto_2:'VLESS + Reality (TCP)',
+  g_port:'Listen port',g_portend:'Port-hop end port',g_reality:'Reality target site',
+  g_nodepw:'Node password (blank = generate)',g_obfs:'Obfs password (blank = generate)',
+  g_name:'Node name (blank = auto-detect country)',g_host:'Node address (blank = auto-detect)',
+  g_connect:'Connection',go_connect_1:'Direct IP (self-signed cert)',go_connect_2:'Domain (Let\'s Encrypt)',
+  g_domain:'Domain',g_email:'LE email (blank = admin@domain)',g_ip:'Node address (blank = auto)',
+  g_sshmode:'SSH login',go_sshmode_1:'Password',go_sshmode_2:'Public key',g_pubkey:'SSH public key',
   dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
   priv:"Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.",
   result:'Result',copied:'Copied',
@@ -139,6 +153,15 @@ const I={
   link:'节点链接 1（vless:// 或 hysteria2://）*',link2:'节点链接 2（可选，另一种协议）',hp:'HTTPS 端口（留空 = 51200）',hp2:'HTTP 端口（留空 = HTTPS 端口 + 1）',pip:'公网 IP（留空 = 自动检测）',
   ans:'脚本提示的预设回答，每行一个（空行 = 采用默认值）。脚本会以非交互方式运行，这些回答通过标准输入喂给它。',ans_ph:'（留空 = 全部采用默认值）',
   ans_warn:'hy2.sh / nexus.sh 会改动 SSH/用户设置或创建虚拟机，请先试运行，并看清脚本的提示内容。',
+  g_hint:'下面就是 hy2.sh 会依次问的问题，按顺序喂给脚本；留空 = 直接回车取默认值。',
+  g_user:'创建新用户？',go_user_n:'不创建',go_user_y:'创建',g_uname:'新用户名',g_upass:'新用户密码',
+  g_proto:'协议',go_proto_1:'Hysteria2（UDP + 端口跳跃）',go_proto_2:'VLESS + Reality（TCP）',
+  g_port:'监听端口',g_portend:'端口跳跃结束端口',g_reality:'Reality 目标网站',
+  g_nodepw:'节点密码（留空=自动生成）',g_obfs:'混淆密码（留空=自动生成）',
+  g_name:'节点名称（留空=自动检测地区）',g_host:'节点地址（留空=自动检测）',
+  g_connect:'连接方式',go_connect_1:'IP 直连（自签证书）',go_connect_2:'域名（申请 LE 证书）',
+  g_domain:'域名',g_email:'LE 邮箱（留空=admin@域名）',g_ip:'节点地址（留空=自动）',
+  g_sshmode:'SSH 登录方式',go_sshmode_1:'密码登录',go_sshmode_2:'公钥登录',g_pubkey:'SSH 公钥',
   dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
   priv:'账号信息经 HTTPS 发给 Worker，仅用于建立 SSH 连接。为了刷新页面后能继续查看任务，它们会被加密（AES-GCM，6 小时有效）成一个凭证，保存在本浏览器的 localStorage 中。',
   result:'结果',copied:'已复制',
@@ -178,6 +201,7 @@ function applyLang(){
  document.querySelectorAll('#langmenu .opt').forEach(o=>o.setAttribute('aria-selected',o.dataset.lang===LANG?'true':'false'));
  $('st').textContent=stFn();
  renderTokenHint();
+ if($('script').value==='hy2'&&HY2V.user)renderHy2();
  renderJobs();
 }
 const qs=new URLSearchParams(location.search);
@@ -195,7 +219,61 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&langOpen){setLangOp
 const api=async(path,body,raw)=>{const r=await fetch('/api/'+path,{method:'POST',headers:{'content-type':'application/json','x-token':TOKEN,'x-lang':LANG},body:JSON.stringify(body)});
  if(raw&&r.ok)return r; const j=await r.json().catch(()=>({error:'HTTP '+r.status})); if(!r.ok||j.error){const e=new Error(j.error||('HTTP '+r.status));e.status=r.status;throw e} return j};
 const strip=s=>s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g,'').replace(/\r/g,'');
-const sel=()=>{const s=$('script').value;$('f-setup').classList.toggle('hide',s!=='setup');$('f-ans').classList.toggle('hide',s==='setup')};$('script').onchange=sel;sel();
+const HY2=[
+ {k:'user',t:'select',opts:[['n','go_user_n'],['y','go_user_y']],def:'n'},
+ {k:'uname',t:'text',show:v=>v.user==='y'},
+ {k:'upass',t:'password',show:v=>v.user==='y'},
+ {k:'proto',t:'select',opts:[['1','go_proto_1'],['2','go_proto_2']],def:'1'},
+ {k:'port',t:'number',def:'443'},
+ {k:'portend',t:'number',def:'19999',show:v=>v.proto!=='2'},
+ {k:'reality',t:'text',def:'www.microsoft.com',show:v=>v.proto==='2'},
+ {k:'nodepw',t:'text',show:v=>v.proto!=='2'},
+ {k:'obfs',t:'text',show:v=>v.proto!=='2'},
+ {k:'name',t:'text'},
+ {k:'host',t:'text',show:v=>v.proto==='2'},
+ {k:'connect',t:'select',opts:[['1','go_connect_1'],['2','go_connect_2']],def:'1',show:v=>v.proto!=='2'},
+ {k:'domain',t:'text',show:v=>v.proto!=='2'&&v.connect==='2'},
+ {k:'email',t:'text',show:v=>v.proto!=='2'&&v.connect==='2'},
+ {k:'ip',t:'text',show:v=>v.proto!=='2'&&v.connect!=='2'},
+ {k:'sshmode',t:'select',opts:[['1','go_sshmode_1'],['2','go_sshmode_2']],def:'1',show:v=>v.user==='y'},
+ {k:'pubkey',t:'textarea',show:v=>v.user==='y'&&v.sshmode==='2'}
+];
+let HY2V={};
+function hy2Defaults(){HY2V={};HY2.forEach(f=>HY2V[f.k]=f.def||'')}
+function renderHy2(){const box=$('hy2form');box.innerHTML='';
+ const intro=document.createElement('div');intro.className='hint';intro.style.margin='0 0 12px';intro.textContent=L('g_hint');box.appendChild(intro);
+ const g=document.createElement('div');g.className='grid';box.appendChild(g);
+ HY2.forEach(f=>{if(f.show&&!f.show(HY2V))return;
+  const d=document.createElement('div');const l=document.createElement('label');l.textContent=L('g_'+f.k);d.appendChild(l);
+  let el;
+  if(f.t==='select'){el=document.createElement('select');f.opts.forEach(([v,key])=>{const o=document.createElement('option');o.value=v;o.textContent=L(key);if((HY2V[f.k]||f.def)===v)o.selected=true;el.appendChild(o)});}
+  else if(f.t==='textarea'){el=document.createElement('textarea');el.value=HY2V[f.k]||'';}
+  else{el=document.createElement('input');el.type=f.t==='password'?'password':f.t==='number'?'number':'text';el.value=HY2V[f.k]||'';}
+  const on=()=>{HY2V[f.k]=el.value;if(f.t==='select'){HY2V[f.k]=el.value;renderHy2()}};
+  if(f.t==='select')el.onchange=on;else el.oninput=on;
+  d.appendChild(el);g.appendChild(d)})}
+function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
+ a.push(y?'y':'');
+ if(y){a.push(v.uname||'');a.push(v.upass||'')}
+ a.push(v.proto==='2'?'2':'');
+ a.push(v.port||'443');
+ if(v.proto==='2'){a.push(v.reality||'')}
+ else{a.push(v.portend||'19999');a.push(v.nodepw||'');a.push(v.obfs||'')}
+ a.push(v.name||'');
+ if(v.proto==='2'){a.push(v.host||'')}
+ else{a.push(v.connect==='2'?'2':'');
+  if(v.connect==='2'){a.push(v.domain||'');a.push(v.email||'')}
+  else{a.push(v.ip||'')}}
+ if(y){a.push(v.sshmode==='2'?'2':'');if(v.sshmode==='2')a.push(v.pubkey||'')}
+ a.push('y');a.push('');
+ return a}
+const sel=()=>{const s=$('script').value;
+ $('f-setup').classList.toggle('hide',s!=='setup');
+ $('f-ans').classList.toggle('hide',s==='setup');
+ $('hy2form').classList.toggle('hide',s!=='hy2');
+ $('manualans').classList.toggle('hide',s==='hy2');
+ if(s==='hy2'){if(!HY2V.user)hy2Defaults();renderHy2()}};
+$('script').onchange=sel;sel();
 let cur=null,running=false,buf='';
 const jobs=()=>JSON.parse(localStorage.getItem('dp-jobs')||'[]').filter(j=>j.expires>Date.now());
 const saveJob=j=>{const a=jobs().filter(x=>x.id!==j.id);a.unshift(j);localStorage.setItem('dp-jobs',JSON.stringify(a.slice(0,8)));renderJobs()};
@@ -238,7 +316,7 @@ async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=fals
  showResult();running=false;$('go').disabled=$('gostream').disabled=false;$('cancel').disabled=true}
 async function run(stream){if(running)return;buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
  const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,
-  args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('ans').value}};
+  args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():$('ans').value}};
  try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream)}
  catch(e){setSt(()=>L('err')+e.message,'err')}}
 async function resume(j){if(running)return;buf='';paint();await follow(j,0,false)}

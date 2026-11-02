@@ -157,6 +157,7 @@ function buildPayload(env, id, o, lang) {
   body.push(`echo ">> [panel] ${T(lang, '已下载', 'downloaded')} $(wc -c < $D/script.sh) bytes, md5 $(md5sum < $D/script.sh | cut -c1-12)"`);
   if (o.dry) {
     body.push(`bash -n $D/script.sh && echo ">> [panel] ${T(lang, '语法检查通过', 'syntax OK')}"`, `head -c 400 $D/script.sh | head -8`);
+    body.push(`echo ">> [panel] ${T(lang, '脚本里的交互提问（源码顺序）：', 'interactive prompts found in the script:')}"`, `grep -nE 'read -[a-z]* ?"|box_input "' $D/script.sh | sed 's/^/   /' | head -40 || true`);
     if (o.script === 'hy2') body.push(`curl -fsSI --max-time 20 https://mirror.notebase.cn/bundle/hy2-bundle.tar.gz | head -4`);
     body.push(`echo ">> [panel] ${T(lang, '试运行结束，未执行任何脚本内容', 'dry run finished, nothing was executed')}"`);
   } else {
