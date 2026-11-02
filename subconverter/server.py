@@ -1429,6 +1429,21 @@ def _load_nodes_for_rules():
     return nodes
 
 
+def _is_sr_conf_path(path):
+    """小火箭 conf 的「带名字」路径(2026-11-03), 规则与 CF worker 的 rule.worker.js 一致:
+         /<P>.conf          /<P>/<名字>.conf          /<P>.conf/<名字>
+    只按「后缀形态」判断, 不校验前缀 <P>(随机路径): 前缀由 nginx 的 location 把关
+    (server.py 只监听 127.0.0.1, 外部到不了), 名字单段、不参与任何逻辑。
+    /health、/rules 及无 .conf 的路径不受影响; ?target=conf 老写法仍然有效。"""
+    parts = [x for x in path.split('?', 1)[0].split('/') if x != '']
+    if len(parts) == 1:
+        return parts[0].endswith('.conf') and len(parts[0]) > len('.conf')
+    if len(parts) == 2:
+        return (parts[1].endswith('.conf') and len(parts[1]) > len('.conf')) or \
+               (parts[0].endswith('.conf') and len(parts[0]) > len('.conf'))
+    return False
+
+
 def _want_rules_mode(path, qs):
     """规则集模式入口: 路径 /rules 或 ?mode=rules。"""
     p = path.split('?', 1)[0].rstrip('/')
@@ -1540,7 +1555,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             # ── 小火箭(Shadowrocket)规则配置(旁路, 2026-09-11): ?target=conf / shadowrocket ──
             # 与模式无关(两条链接都能用); ?raw=1 返回原样+注入节点行。拉不到上游会自动退回最小配置。
-            if target in ('conf', 'shadowrocket'):
+            if target in ('conf', 'shadowrocket') or _is_sr_conf_path(self.path):
                 # Content-Disposition: 小火箭下载时用它当本地文件名(2026-09-28); 中文名走 RFC 5987:
                 #   attachment; filename="unified.conf"; filename*=UTF-8''%E7%BB%9F%E4%B8%80%E8%AE%A2%E9%98%85.conf
                 self._respond(200, get_shadowrocket(c, raw=(qs.get('raw', [''])[0] == '1')), 'text/plain',

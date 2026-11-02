@@ -677,6 +677,13 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$remote_addr;
     }
+    # 小火箭 conf 带名字的路径(2026-11-03): /P.conf、/P/<名字>.conf、/P.conf/<名字>; 名字不参与任何逻辑, 仅用于小火箭显示
+    location ~ "^/$B64PATH(\.conf(/[^/]+)?|/[^/]+\.conf)\$" {
+        limit_req zone=subconv burst=10 nodelay;
+        proxy_pass http://127.0.0.1:$SRV_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+    }
     location / { return 404; }
 }
 
@@ -689,6 +696,13 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
 
     location = /$B64PATH {
+        limit_req zone=subconv burst=10 nodelay;
+        proxy_pass http://127.0.0.1:$SRV_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+    }
+    # 小火箭 conf 带名字的路径(2026-11-03): /P.conf、/P/<名字>.conf、/P.conf/<名字>; 名字不参与任何逻辑, 仅用于小火箭显示
+    location ~ "^/$B64PATH(\.conf(/[^/]+)?|/[^/]+\.conf)\$" {
         limit_req zone=subconv burst=10 nodelay;
         proxy_pass http://127.0.0.1:$SRV_PORT;
         proxy_set_header Host \$host;
@@ -717,6 +731,13 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
 
     location = /$B64PATH {
+        limit_req zone=subconv burst=10 nodelay;
+        proxy_pass http://127.0.0.1:$SRV_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+    }
+    # 小火箭 conf 带名字的路径(2026-11-03): /P.conf、/P/<名字>.conf、/P.conf/<名字>; 名字不参与任何逻辑, 仅用于小火箭显示
+    location ~ "^/$B64PATH(\.conf(/[^/]+)?|/[^/]+\.conf)\$" {
         limit_req zone=subconv burst=10 nodelay;
         proxy_pass http://127.0.0.1:$SRV_PORT;
         proxy_set_header Host \$host;
@@ -870,13 +891,14 @@ fi
 # ---------- 12.6 小火箭规则配置链接(旁路) ----------
 # 同样只在真实探测 200 时打印; 失败静默跳过。conf 与模式无关(两种链接都能配), 所以只打一条。
 if [ "$MODE" = "2" ]; then SR_BASE="$BASE_URL_HTTP"; else SR_BASE="$BASE_URL"; fi
+SR_NAME="Shadowrocket"   # 小火箭里显示的规则名(取 URL 最后一段, 需以 .conf 结尾才走 conf 路由)
 SR_CODE=$(curl -sk --max-time 6 -o /dev/null -w "%{http_code}" \
-  "$SR_BASE/$B64PATH?target=conf" 2>/dev/null || true)
+  "$SR_BASE/$B64PATH/$SR_NAME.conf" 2>/dev/null || true)
 if [ "$SR_CODE" = "200" ]; then
   echo ""
   echo -e "  ${GREEN}📱 小火箭(Shadowrocket)规则配置${NC}:"
-  echo -e "    ${MAGENTA}${BOLD}$SR_BASE/$B64PATH?target=conf${NC}"
-  echo -e "    ${YELLOW}(小火箭要两条: 节点用上面的订阅链接导入, 规则用这条 conf; 加 &raw=1 拿带注释原版)${NC}"
+  echo -e "    ${MAGENTA}${BOLD}$SR_BASE/$B64PATH/$SR_NAME.conf${NC}"
+  echo -e "    ${YELLOW}(小火箭要两条: 节点用上面的订阅链接导入, 规则用这条 conf, 规则名显示为 Shadowrocket; 想改名就把链接最后的 Shadowrocket 换成别的, 保留 .conf 结尾)${NC}"
 fi
 echo ""
 echo -e "  ${CYAN}支持客户端:${NC}"
