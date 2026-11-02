@@ -31,6 +31,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 @media (max-width:560px){.jobs .jobrow{gap:8px}.jobs .jbtn{padding:5px 10px}}
 .quota{font-size:12px;color:var(--mut);margin:-8px 0 16px;line-height:1.6}
 .quota b{color:var(--fg);font-weight:600}
+.fdesc{font-size:11px;color:var(--mut);margin-top:5px;line-height:1.5}
 .hint{font-size:12px;color:var(--mut);margin-top:10px;line-height:1.6}
 .hint code{font-family:ui-monospace,Consolas,monospace;background:#0c0e12;border:1px solid var(--bd);border-radius:4px;padding:1px 5px;font-size:11px}
 .lang{position:absolute;right:12px;top:10px;z-index:30}
@@ -119,7 +120,9 @@ const I={
   g_connect:'Connection',go_connect_1:'Direct IP (self-signed cert)',go_connect_2:'Domain (Let\'s Encrypt)',
   g_domain:'Domain',g_email:'LE email (blank = admin@domain)',g_ip:'Node address (blank = auto)',
   g_sshmode:'SSH login',go_sshmode_1:'Password',go_sshmode_2:'Public key',g_pubkey:'SSH public key',
-  g_sub:'Emit a universal subscription link?',go_sub_y:'Yes · universal smart-routing subscription',go_sub_n:'No · raw node link only',
+  g_sub:'Subscription type',go_sub_y:'Smart routing config (recommended)',go_sub_n:'Raw node subscription',
+  sub_desc_y:'Ships the full routing ruleset — recommended for Clash, sing-box and Shadowrocket.',
+  sub_desc_n:'Raw node links only (VLESS / HY2), no routing rules.',
   dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
   priv:"Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.",
   result:'Result',copied:'Copied',
@@ -152,7 +155,9 @@ const I={
   g_connect:'连接方式',go_connect_1:'IP 直连（自签证书）',go_connect_2:'域名（申请 LE 证书）',
   g_domain:'域名',g_email:'LE 邮箱（留空=admin@域名）',g_ip:'节点地址（留空=自动）',
   g_sshmode:'SSH 登录方式',go_sshmode_1:'密码登录',go_sshmode_2:'公钥登录',g_pubkey:'SSH 公钥',
-  g_sub:'是否输出通用分流订阅链接',go_sub_y:'是 · 输出通用分流订阅链接',go_sub_n:'否 · 输出原始节点链接',
+  g_sub:'订阅类型',go_sub_y:'智能分流配置（推荐）',go_sub_n:'原始节点订阅',
+  sub_desc_y:'提供完整的分流规则，推荐 Clash、Sing-box、小火箭客户端使用。',
+  sub_desc_n:'仅输出纯节点链接（含 VLESS / HY2），不含分流规则。',
   dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
   priv:'账号信息经 HTTPS 发给 Worker，仅用于建立 SSH 连接。为了刷新页面后能继续查看任务，它们会被加密（AES-GCM，6 小时有效）成一个凭证，保存在本浏览器的 localStorage 中。',
   result:'结果',copied:'已复制',
@@ -228,7 +233,7 @@ const HY2=[
  {k:'ip',t:'text',show:v=>v.proto!=='2'&&v.connect!=='2'},
  {k:'sshmode',t:'select',opts:[['1','go_sshmode_1'],['2','go_sshmode_2']],def:'1',show:v=>v.user==='y'},
  {k:'pubkey',t:'textarea',show:v=>v.user==='y'&&v.sshmode==='2'},
- {k:'sub',t:'select',opts:[['y','go_sub_y'],['n','go_sub_n']],def:'y'}
+ {k:'sub',t:'select',opts:[['y','go_sub_y'],['n','go_sub_n']],def:'y',desc:true}
 ];
 let HY2V={};
 function hy2Defaults(){HY2V={};HY2.forEach(f=>HY2V[f.k]=f.def||'')}
@@ -243,7 +248,9 @@ function renderHy2(){const box=$('hy2form');box.innerHTML='';
   else{el=document.createElement('input');el.type=f.t==='password'?'password':f.t==='number'?'number':'text';el.value=HY2V[f.k]||'';}
   const on=()=>{HY2V[f.k]=el.value;if(f.t==='select'){HY2V[f.k]=el.value;renderHy2()}};
   if(f.t==='select')el.onchange=on;else el.oninput=on;
-  d.appendChild(el);g.appendChild(d)})}
+  d.appendChild(el);
+  if(f.desc){const h=document.createElement('div');h.className='fdesc';h.textContent=L('sub_desc_'+((HY2V[f.k]==='n')?'n':'y'));d.appendChild(h)}
+  g.appendChild(d)})}
 function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
  a.push(y?'y':'');
  if(y){a.push(v.uname||'');a.push(v.upass||'')}
