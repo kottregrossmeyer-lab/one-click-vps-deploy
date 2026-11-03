@@ -47,6 +47,19 @@ case "$OS_ID" in
 esac
 echo -e "${CYAN}>> 系统: ${OS_ID} (${OS_FAMILY} 系)${NC}"
 
+# 网络抖一下、镜像临时 5xx，重试几次再放弃。次数用尽才把失败交回去。
+retry_cmd() {
+    local tries="$1" i=1
+    shift
+    while true; do
+        if "$@"; then return 0; fi
+        if [[ "$i" -ge "$tries" ]]; then return 1; fi
+        echo "!! 没成功，$((i*3)) 秒后重试 (${i}/${tries})"
+        sleep $((i*3))
+        i=$((i+1))
+    done
+}
+
 # ========== 交互式配置 ==========
 echo -e "${CYAN}${BOLD}========================================${NC}"
 echo -e "${CYAN}${BOLD}   sing-box 一键部署脚本 (HY2 / VLESS)${NC}"
@@ -363,7 +376,8 @@ ensure_swap() {
     echo ">> 已启用 swap"
     return 0
 }
-ensure_swap
+# 加 swap 失败不能把整个安装带走（小磁盘、dd 被拒都很常见）
+ensure_swap || echo ">> 加 swap 失败，继续安装"
 
 # 等包管理器锁释放(OpenWrt 风格: 最多 N 秒, 超时才优雅停/最后手段 kill)
 wait_pkg_lock() {
@@ -405,21 +419,22 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
     disable_auto_update
     wait_pkg_lock 120 "/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock"
     dpkg --configure -a 2>/dev/null || true
-    apt update -qq
-    apt install -y sudo ufw jq openssl
+    export DEBIAN_FRONTEND=noninteractive
+    retry_cmd 4 apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+    retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 sudo ufw jq openssl
 else
     disable_auto_update
     wait_pkg_lock 120 "/var/lib/dnf/*.lock"
     # 首次 dnf 元数据下载慢, 预缓存(一次性代价, 之后安装快)
 echo -e "${GREEN}>> 首次刷新 dnf 仓库元数据 (视网速需 1-3 分钟, 请稍候)...${NC}"
     timeout 300 dnf -y makecache >/dev/null 2>&1 || true
-    dnf install -y epel-release
+    retry_cmd 3 dnf install -y epel-release
     # EL9 启用 CRB 以满足部分 EPEL 包依赖(config-manager 缺失时忽略)
     dnf config-manager --set-enabled crb 2>/dev/null || true
     timeout 180 dnf -y makecache >/dev/null 2>&1 || true
     # openssl 已有就不装(避免升级导致 sshd OpenSSL 版本不匹配而锁死)
-    command -v openssl >/dev/null 2>&1 || dnf install -y openssl
-    dnf install -y sudo jq
+    command -v openssl >/dev/null 2>&1 || retry_cmd 3 dnf install -y openssl
+    retry_cmd 3 dnf install -y sudo jq
     # 保险: 若 sshd 因 OpenSSL 版本不匹配无法启动, 自动重装 openssh-server(防止 root 被锁死)
     if ! systemctl is-active --quiet sshd; then
         systemctl start sshd 2>/dev/null || true
@@ -481,12 +496,32 @@ echo -e "${GREEN}>> RHEL 在线安装 sing-box ...${NC}"
     # 教训: 包内 1.13.19 的 Reality **服务端**是坏的 —— 客户端连它一律
     # "REALITY: processed invalid connection"(客户端表现为 timeout/EOF), 同一份配置换 1.14 立刻正常。
     # 已升 1.14.2。
-    if ! curl -fSL -o /tmp/sing-box.tar.gz "https://mirror.notebase.cn/bundle/singbox/sing-box-linux-${SB_ARCH}.tar.gz"; then
-echo -e "${GREEN}>> hk 下载失败,回退 GitHub ...${NC}"
-        SB_VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name)
+    fetch_sb() {
+        local url="$1" tmp=/tmp/sing-box.tar.gz.part
+        rm -f "$tmp"
+        curl -fSL --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 180 -o "$tmp" "$url" \
+          && tar tzf "$tmp" >/dev/null 2>&1 \
+          && mv -f "$tmp" /tmp/sing-box.tar.gz
+    }
+    sb_ok=0
+    for i in 1 2 3; do
+        if fetch_sb "https://mirror.notebase.cn/bundle/singbox/sing-box-linux-${SB_ARCH}.tar.gz"; then sb_ok=1; break; fi
+        echo "!! sing-box 镜像第 ${i} 次没下完整"
+        sleep $((i*2))
+    done
+    if [[ $sb_ok -ne 1 ]]; then
+echo -e "${GREEN}>> 镜像失败，改从 GitHub 下载 ...${NC}"
+        SB_VERSION=$(curl -fsSL --retry 2 --connect-timeout 15 --max-time 30 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name || true)
         SB_VER=${SB_VERSION#v}
-        curl -fSL -o /tmp/sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${SB_VERSION}/sing-box-${SB_VER}-linux-${SB_ARCH}.tar.gz" \
-            || curl -fSL -o /tmp/sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/${SB_VERSION}/sing-box-${SB_VER}-linux-${SB_ARCH}-glibc.tar.gz"
+        if [[ -n "${SB_VERSION:-}" && "$SB_VERSION" != "null" ]]; then
+            fetch_sb "https://github.com/SagerNet/sing-box/releases/download/${SB_VERSION}/sing-box-${SB_VER}-linux-${SB_ARCH}.tar.gz" \
+              || fetch_sb "https://github.com/SagerNet/sing-box/releases/download/${SB_VERSION}/sing-box-${SB_VER}-linux-${SB_ARCH}-glibc.tar.gz" \
+              || true
+        fi
+    fi
+    if ! tar tzf /tmp/sing-box.tar.gz >/dev/null 2>&1; then
+        echo "!! sing-box 安装包下载失败（镜像和 GitHub 都没有拿到完整包）" >&2
+        exit 1
     fi
     tar xzf /tmp/sing-box.tar.gz -C /tmp
     # hk 包内层直接是 sing-box 二进制;GitHub 包带版本目录,find 兜底
@@ -594,10 +629,14 @@ echo -e "${CYAN}===== 9. 部署 systemd service 并启动 =====${NC}"
 cp "$SCRIPT_DIR/systemd/sing-box.service" /etc/systemd/system/sing-box.service
 systemctl daemon-reload
 systemctl enable sing-box
-systemctl restart sing-box
-
-sleep 2
-if ! systemctl is-active --quiet sing-box; then
+sb_up=0
+for i in 1 2 3; do
+  systemctl restart sing-box || true
+  sleep 2
+  if systemctl is-active --quiet sing-box; then sb_up=1; break; fi
+  echo "!! sing-box 还没起来，再试一次 ($i/3)"
+done
+if [[ "$sb_up" -ne 1 ]]; then
   echo "!! sing-box 启动失败，日志如下：" >&2
   journalctl -u sing-box -n 30 --no-pager
   exit 1

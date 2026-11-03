@@ -153,7 +153,7 @@ function buildPayload(env, id, o, lang) {
   body.push(`rm -f "$0"`, `D=${D}`);
   body.push(`SUDO=""; if [ "$(id -u)" -ne 0 ]; then SUDO="sudo -n -E"; fi`);
   body.push(`echo ">> [panel] ${T(lang, '任务', 'job')} ${id}: ${S.label}${o.dry ? T(lang, '（试运行：仅下载并检查语法）', ' (DRY RUN: download + syntax check only)') : ''} @ $(hostname) / $(id -un)"`);
-  body.push(`curl -fsSL --retry 2 --connect-timeout 20 --max-time 120 -o $D/script.sh ${shq(SRC)} || { echo "[panel] ${T(lang, '下载失败：', 'download failed: ')}${SRC}"; exit 1; }`);
+  body.push(`curl -fsSL --retry 5 --retry-delay 2 --connect-timeout 20 --max-time 180 -o $D/script.sh ${shq(SRC)} || { echo "[panel] ${T(lang, '下载失败：', 'download failed: ')}${SRC}"; exit 1; }`);
   body.push(`echo ">> [panel] ${T(lang, '已下载', 'downloaded')} $(wc -c < $D/script.sh) bytes, md5 $(md5sum < $D/script.sh | cut -c1-12)"`);
   if (o.dry) {
     body.push(`bash -n $D/script.sh && echo ">> [panel] ${T(lang, '语法检查通过', 'syntax OK')}"`, `head -c 400 $D/script.sh | head -8`);

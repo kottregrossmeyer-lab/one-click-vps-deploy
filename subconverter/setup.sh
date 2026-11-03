@@ -31,16 +31,24 @@ echo "=============================================="
 echo "[提示] 较老的系统(如 Debian 9 / Ubuntu 18 / CentOS 7-8 等已 EOL 的发行版)可能在装包阶段报错 —— 多为软件源已下线所致, 请自行排查; 建议 Debian 11+ / Ubuntu 20.04+ / RHEL 9 系。"
 
 echo "[1/3] 下载部署包 (15KB, 国内1-3秒 / 海外可能较慢, 请稍候)..."
-for attempt in 1 2 3; do
-  if curl -fSL --retry 2 --retry-delay 2 --connect-timeout 30 --max-time 120 \
-      --progress-bar -o /tmp/subconverter-deploy.tar.gz "$URL/subconverter-deploy.tar.gz"; then
+PKG=/tmp/subconverter-deploy.tar.gz
+ok=0
+for attempt in 1 2 3 4; do
+  rm -f "${PKG}.part"
+  # 先写到旁边，确认是完整压缩包再换上。断线不会留下一个解不开的半截文件。
+  if curl -fSL --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 120 \
+      --progress-bar -o "${PKG}.part" "$URL/subconverter-deploy.tar.gz" \
+     && [ -s "${PKG}.part" ] && tar tzf "${PKG}.part" >/dev/null 2>&1; then
+    mv -f "${PKG}.part" "$PKG"
+    ok=1
     break
   fi
-  echo "   (第 ${attempt} 次下载失败, 重试...)"
-  sleep 2
+  rm -f "${PKG}.part"
+  echo "   (第 ${attempt} 次下载不完整, 重试...)"
+  sleep $((attempt*2))
 done
 
-if [ ! -s /tmp/subconverter-deploy.tar.gz ]; then
+if [ "$ok" != "1" ]; then
   echo "[X] 下载失败 (可能超过每日下载次数限制, 或网络不通)"
   echo "    提示: 检查是否能访问 $URL"
   exit 1
