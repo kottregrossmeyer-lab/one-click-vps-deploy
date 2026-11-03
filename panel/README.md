@@ -58,6 +58,8 @@ npx wrangler secret put PANEL_TOKEN      # openssl rand -hex 16 —— 可选：
 
 ## 配置项
 
+人机验证是可选的。配了 `TURNSTILE_SITEKEY` 和密钥 `TURNSTILE_SECRET` 之后，公开使用要点一次 Cloudflare 的对勾；部署者自己的令牌不用点。没配就和原来一样。
+
 | 变量 / 绑定 | 说明 |
 |---|---|
 | `PUBLIC_MODE` | `"1"` 公开免令牌，`"0"` 只认令牌 |

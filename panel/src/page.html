@@ -48,7 +48,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 .langmenu .opt .tick{width:14px;height:14px;flex:none;color:var(--acc);opacity:0;transition:opacity .1s}
 .langmenu .opt[aria-selected="true"] .tick{opacity:1}
 @media (max-width:640px){h1{padding-right:112px}.lang{right:6px;top:6px}}
-</style></head><body><main>
+.ts{margin:14px 0 2px}.ts label{display:block;margin:0 0 8px}</style></head><body><main>
 <div class="lang" id="lang">
 <button class="langbtn" id="langbtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">
 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.7 2.6 15.3 0 18"/><path d="M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>
@@ -89,7 +89,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="pip">Public IP (blank = auto-detect)</label><input id="pip"></div></div></div>
 <div id="f-ans" class="hide" style="margin-top:12px"><div id="hy2form" class="hide"></div></div>
 <div class="row"><label style="margin:0"><input type="checkbox" id="dry" style="width:auto"> <span data-i="dry">Dry run (download + syntax check only, nothing executed)</span></label></div>
-<div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
+<div id="tsbox" class="ts hide"><label data-i="human">Human check</label><div id="tslot"></div></div><div class="row"><button id="go" data-i="go">Run script</button><button class="sec" id="gostream" data-i="gostream" data-al="gostream_al">Run + live stream</button><button class="sec" id="cancel" disabled data-i="cancel">Cancel job</button></div>
 <div class="warn" style="margin-top:8px" data-i="priv">Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.</div>
 </div>
 
@@ -97,6 +97,8 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div class="res card hide" id="res"><div class="reshd"><span class="dot"></span><b data-i="result">Result</b></div><div id="resbody"></div></div>
 <pre id="log"></pre></div>
 </main>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async></script>
+<script>const TURNSTILE_SITEKEY="__TURNSTILE_SITEKEY__";</script>
 <script>
 const $=id=>document.getElementById(id);
 const I={
@@ -124,7 +126,7 @@ const I={
   g_pubip:'Public IP (blank = auto-detect)',g_sport:'Subscription HTTPS port',g_sport2:'Subscription HTTP port',
   sub_desc_y:'Ships the full routing ruleset — recommended for Clash, sing-box and Shadowrocket.',
   sub_desc_n:'Raw node links only (VLESS / HY2), no routing rules.',
-  dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
+  human:'Human check',humanNeed:'Tick the human check first',dry:'Dry run (download + syntax check only, nothing executed)',go:'Run script',gostream:'Run + live stream',gostream_al:'Hold one request open and stream live output',cancel:'Cancel job',
   priv:"Credentials go over HTTPS to the Worker, which uses them only to open the SSH session. To allow resuming after a refresh they are sealed (AES-GCM, 6h) into a ticket kept in this browser's localStorage.",
   result:'Result',copied:'Copied',
   k_http_t:'HTTP subscription',k_http_d:'Use this when the TLS cert is self-signed — no need to skip verification',
@@ -160,7 +162,7 @@ const I={
   g_pubip:'公网 IP（留空=自动检测）',g_sport:'订阅服务 HTTPS 端口',g_sport2:'订阅服务 HTTP 端口',
   sub_desc_y:'提供完整的分流规则，推荐 Clash、Sing-box、小火箭客户端使用。',
   sub_desc_n:'仅输出纯节点链接（含 VLESS / HY2），不含分流规则。',
-  dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
+  human:'人机验证',humanNeed:'先点一下人机验证',dry:'试运行（仅下载并检查语法，不执行任何内容）',go:'运行脚本',gostream:'运行并实时输出',gostream_al:'保持一个请求不断开，实时推送输出',cancel:'取消任务',
   priv:'账号信息经 HTTPS 发给 Worker，仅用于建立 SSH 连接。为了刷新页面后能继续查看任务，它们会被加密（AES-GCM，6 小时有效）成一个凭证，保存在本浏览器的 localStorage 中。',
   result:'结果',copied:'已复制',
   k_http_t:'HTTP 订阅',k_http_d:'自签证书时用这个，客户端不用跳过证书校验',
@@ -184,7 +186,7 @@ function renderTokenHint(){
  }else{q.hidden=true;if(INFO)card.classList.toggle('hide',!!TOKEN);
   if(el)el.innerHTML=L('tokenHelp').replace('{daily}',(INFO&&INFO.daily)||5);}
 }
-async function loadInfo(){try{const r=await fetch('/api/info',{headers:{'x-lang':LANG,'x-token':TOKEN||''}});if(r.ok){INFO=await r.json();renderTokenHint()}else{INFO={public:false,owner:false};renderTokenHint()}}catch(e){INFO={public:false,owner:false};renderTokenHint()}}
+async function loadInfo(){try{const r=await fetch('/api/info',{headers:{'x-lang':LANG,'x-token':TOKEN||''}});if(r.ok){INFO=await r.json();renderTokenHint()}else{INFO={public:false,owner:false};renderTokenHint()}}catch(e){INFO={public:false,owner:false};renderTokenHint()};if(!running)mountTurnstile()}
 const L=k=>I[LANG][k]||I.en[k]||k;
 let stFn=()=>L('idle');
 function setSt(fn,cls){stFn=fn;const el=$('st');el.className='st '+(cls||'');el.textContent=fn()}
@@ -201,6 +203,7 @@ function applyLang(){
  renderTokenHint();
  if($('script').value==='hy2'&&HY2V.user)renderHy2();
  renderJobs();
+ mountTurnstile();
 }
 const qs=new URLSearchParams(location.search);
 let TOKEN=qs.get('t')||localStorage.getItem('dp-token')||'';
@@ -321,7 +324,7 @@ function showResult(){const t=strip(buf);const clean=u=>u.replace(/[)\]）】，
   hv.append(a,c);row.append(hk,hv);b.appendChild(row)})}
 function paint(){const el=$('log');const atEnd=el.scrollTop+el.clientHeight>=el.scrollHeight-20;el.textContent=strip(buf);if(atEnd)el.scrollTop=el.scrollHeight}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=false;$('go').disabled=$('gostream').disabled=true;const t0=Date.now();
+async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=false;setRunLock();const t0=Date.now();
  try{
   if(stream){const r=await api('stream',{ticket:j.ticket,off},true);const rd=r.body.getReader(),d=new TextDecoder('utf-8');
    for(;;){const{value,done}=await rd.read();if(done)break;buf+=d.decode(value,{stream:true});paint();setSt(()=>L('job')+' '+j.id+' '+L('streaming')+((Date.now()-t0)/1000|0)+'s')}
@@ -330,12 +333,29 @@ async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=fals
    setSt(()=>L('job')+' '+j.id+' '+(s.done?L('finished')+s.code:L('running')+((Date.now()-t0)/1000|0)+'s'),s.done&&s.code!==0?'err':'');
    if(s.done){break}await sleep(3000)}
  }catch(e){setSt(()=>L('err')+e.message,'err')}
- showResult();running=false;$('go').disabled=$('gostream').disabled=false;$('cancel').disabled=true}
-async function run(stream){if(running)return;buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
- const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,
+ showResult();running=false;setRunLock();$('cancel').disabled=true}
+let TS_TOKEN='', TS_WID=null;
+function needHuman(){ return !!TURNSTILE_SITEKEY && !(INFO&&INFO.owner); }
+function setRunLock(){ const lock=running||(needHuman()&&!TS_TOKEN); $('go').disabled=lock; $('gostream').disabled=lock; }
+function mountTurnstile(){
+ const box=$('tsbox'); if(!box) return;
+ if(!needHuman()){ box.classList.add('hide'); TS_TOKEN=''; TS_WID=null; if(window.turnstile&&TS_WID!=null){} setRunLock(); return; }
+ box.classList.remove('hide');
+ const slot=$('tslot'); slot.innerHTML=''; TS_TOKEN=''; TS_WID=null; setRunLock();
+ const start=()=>{
+  if(!window.turnstile){ setTimeout(start,60); return; }
+  TS_WID=turnstile.render(slot,{sitekey:TURNSTILE_SITEKEY,theme:'dark',appearance:'always',language:LANG==='zh'?'zh-cn':'en',
+   callback:(tok)=>{TS_TOKEN=tok;setRunLock()},'expired-callback':()=>{TS_TOKEN='';setRunLock()},'error-callback':()=>{TS_TOKEN='';setRunLock()}});
+ };
+ start();
+}
+async function run(stream){if(running)return;
+ if(needHuman()&&!TS_TOKEN){setSt(()=>L('humanNeed'),'err');return}
+ buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
+ const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,turnstile:TS_TOKEN,
   args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():[]}};
- try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream)}
- catch(e){setSt(()=>L('err')+e.message,'err')}}
+ try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream);mountTurnstile()}
+ catch(e){setSt(()=>L('err')+e.message,'err');if(/人机|human check/i.test(e.message||''))mountTurnstile()}}
 async function resume(j){if(running)return;buf='';paint();await follow(j,0,false)}
 $('go').onclick=()=>run(false);$('gostream').onclick=()=>run(true);
 $('cancel').onclick=async()=>{if(!cur)return;try{const r=await api('cancel',{ticket:cur.ticket});setSt(()=>L('cancelRes')+(/killed/.test(r.result)?L('killed'):L('nothing')))}catch(e){setSt(()=>L('cancelErr')+e.message,'err')}};

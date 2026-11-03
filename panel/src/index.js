@@ -53,6 +53,7 @@ const ZH = {
   'too many job starts, wait a minute': '启动任务过于频繁，请等待一分钟',
   'daily limit reached': '这个 IP 今天的免费次数用完了，明天再来，或者自己部署一份',
   'not found': '接口不存在',
+  'human check failed': '人机验证没通过，请再点一次',
   'internal error': '内部错误',
 };
 function tr(m, lang) {
@@ -230,6 +231,20 @@ async function cancel(t) {
   return { result: dec(r.stdout).trim() };
 }
 
+
+async function turnstileOk(env, token, ip) {
+  if (typeof token !== 'string' || token.length < 10 || token.length > 2048) return false;
+  try {
+    const r = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: token, remoteip: ip }),
+    });
+    const j = await r.json();
+    return !!j.success;
+  } catch { return false; }
+}
+
 // ---------- daily quota (public mode) ----------
 async function quota(env, ip, consume) {
   if (!env.QUOTA) return { ok: true, left: null };
@@ -252,7 +267,11 @@ export default {
     const ip = req.headers.get('cf-connecting-ip') || 'x';
     const LANG = req.headers.get('x-lang') === 'zh' ? 'zh' : 'en';
     const json = (o, st = 200) => jsonL(LANG, o, st);
-    if (req.method === 'GET' && p === '/') return new Response(PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' } });
+    if (req.method === 'GET' && p === '/') {
+      const sitekey = String(env.TURNSTILE_SITEKEY || '').replace(/[^0-9A-Za-z_-]/g, '');
+      const html = PAGE.replace('__TURNSTILE_SITEKEY__', sitekey);
+      return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' } });
+    }
     if (!p.startsWith('/api/')) return new Response('not found', { status: 404 });
     if (await limited(env, 'RL_API', 'api:' + ip)) return json({ error: 'rate limited' }, 429);
     const tok = req.headers.get('x-token') || '';
@@ -277,6 +296,8 @@ export default {
       if (p === '/api/start') {
         if (await limited(env, 'RL_START', 'start:' + ip)) return json({ error: 'too many job starts, wait a minute' }, 429);
         const o = validateStart(body);
+        // 公开使用要过人机验证。部署者令牌不加这一道。没配密钥的自建副本保持原样。
+        if (!owner && env.TURNSTILE_SECRET && !(await turnstileOk(env, body.turnstile, ip))) return json({ error: 'human check failed' }, 403);
         if (!owner) {
           let q = { ok: true, left: null };
           try { q = await quota(env, ip, true); } catch (e) { /* DO hiccup must not lock everyone out */ }
