@@ -127,7 +127,7 @@ function validateStart(b) {
   for (const l of [o.link, o.link2]) if (l && !LINK_RE.test(l)) bad('node link must start with vless:// or hysteria2:// (no spaces)');
   o.publicIp = (a.publicIp || '').trim(); if (o.publicIp && !/^\d{1,3}(\.\d{1,3}){3}$/.test(o.publicIp)) bad('invalid public IP');
   o.httpsPort = a.httpsPort ? String(port(a.httpsPort)) : ''; o.httpPort = a.httpPort ? String(port(a.httpPort)) : '';
-  o.answers = Array.isArray(a.answers) ? a.answers : String(a.answers || '').split('\n');
+  o.answers = (Array.isArray(a.answers) ? a.answers : String(a.answers || '').split('\n')).map((x) => String(x).replace(/[\r\n\t]/g, ' '));
   if (o.answers.length > 60 || o.answers.some((x) => typeof x !== 'string' || x.length > 300 || /[\x00-\x08\x0b-\x1f\x7f]/.test(x))) bad('invalid answers');
   if (o.script === 'setup' && !o.dry && !o.link && !o.link2) bad('setup.sh needs a node link (vless:// or hysteria2://)');
   return o;
@@ -165,7 +165,9 @@ function buildPayload(env, id, o, lang) {
       if (o.link) body.push(`export SUB_LINK=${shq(o.link)}`);
       if (o.link2) body.push(`export SUB_LINK2=${shq(o.link2)}`);
       // prompts of deploy.sh: access mode (blank=public IP), public IP (blank=auto), HTTPS port, HTTP port
-      ans = ['', o.publicIp, o.httpsPort, o.httpPort];
+      // setup.sh re-prompts forever if its auto-detect fails, so hand it an explicit IP when we have one.
+      const ipv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(o.host) && !/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(o.host);
+      ans = ['', o.publicIp || (ipv4 ? o.host : ''), o.httpsPort, o.httpPort];
     } else ans = o.answers;
     body.push(`export TERM=xterm DEBIAN_FRONTEND=noninteractive`);
     body.push(`printf '%s\\n' ${ans.map(shq).join(' ')} | $SUDO bash $D/script.sh`);
@@ -276,7 +278,8 @@ export default {
         if (await limited(env, 'RL_START', 'start:' + ip)) return json({ error: 'too many job starts, wait a minute' }, 429);
         const o = validateStart(body);
         if (!owner) {
-          const q = await quota(env, ip, true);
+          let q = { ok: true, left: null };
+          try { q = await quota(env, ip, true); } catch (e) { /* DO hiccup must not lock everyone out */ }
           if (!q.ok) return json({ error: 'daily limit reached' }, 429);
         }
         return json(await startJob(env, o, LANG));
@@ -312,6 +315,13 @@ export class Quota {
   constructor(state) { this.state = state; }
   async fetch(req) {
     const { day, ip, limit, global, consume } = await req.json();
+    const lastDay = await this.state.storage.get('day');
+    if (lastDay !== day) {
+      const all = await this.state.storage.list();
+      const stale = [...all.keys()].filter((k) => k.startsWith('u:') && !k.startsWith('u:' + day + ':'));
+      if (stale.length) await this.state.storage.delete(stale);
+      await this.state.storage.put('day', day);
+    }
     const uk = `u:${day}:${ip}`, gk = `g:${day}`;
     const cur = await this.state.storage.get([uk, gk]);
     let n = cur.get(uk) || 0, g = cur.get(gk) || 0;

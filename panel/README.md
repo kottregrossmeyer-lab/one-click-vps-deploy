@@ -70,6 +70,18 @@ npx wrangler secret put PANEL_TOKEN      # openssl rand -hex 16 —— 可选：
 
 自定义域名（可选）：把 `wrangler.toml` 里的 `workers_dev` 和 `routes` 注释打开，域名所在 zone 必须在同一个 Cloudflare 账号下。
 
+## 出问题先看这几条
+
+| 症状 | 多半是 | 怎么办 |
+|---|---|---|
+| 卡在「[2] 访问方式」然后退出码 1 | 订阅脚本拿不到输入（上游脚本改了提问顺序） | 先跑一次**试运行**，核对「脚本里的交互提问」清单；顺序变了就来提 Issue |
+| 一直问端口 / 反复重问 | 目标机端口被占（装过一遍） | 表单里换 HTTPS/HTTP 端口再跑，或先停掉旧服务 |
+| 公网 IP 取不到、链接里 IP 是空的 | 机器访问不了 ipify 之类的探测接口 | 表单里手填「公网 IP」 |
+| 报 `server not configured` | Worker 的 `TICKET_KEY` / `PANEL_TOKEN` 没设 | `wrangler secret put ...` 再试 |
+| 重新 deploy 后要重新填令牌 | `wrangler deploy` 不会保留 secret 值的认知误区 | secret 一直在 Cloudflare 上，只有删 worker 重建才会丢；删了就要重设 |
+| 额度没重置 | 按**北京时间 0 点**算新的一天 | 等 0 点，或用自己的令牌免额 |
+| 自定义域名一开始 SSL 报错 | 证书还在签 | 等 1~2 分钟 |
+
 ## 安全模型 / 已知限制
 
 - 面板本身**不存任何凭据**，但它是一个能发 SSH 的出口：公开模式下任何人都能借你的 Worker IP 去连任意主机。介意这点就别开 `PUBLIC_MODE`，或者把 `GLOBAL_DAILY` 调小。
