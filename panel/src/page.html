@@ -271,7 +271,12 @@ function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
  if(y){a.push(v.sshmode==='2'?'2':'');if(v.sshmode==='2')a.push(v.pubkey||'')}
  a.push('y');
  if(v.sub==='n'){a.push('n')}
- else{const host=(document.getElementById('host').value||'').trim();const ip=/^\d{1,3}(\.\d{1,3}){3}$/.test(host)&&!/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);a.push('');a.push(v.pubip||(ip?host:''));a.push(v.sport||'51200');a.push(v.sport2||'51201')}
+ else{const host=(document.getElementById('host').value||'').trim();
+  const ipRe=/^\d{1,3}(\.\d{1,3}){3}$/,priv=/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+  const ip=ipRe.test(host)&&!priv.test(host);
+  const pub=(v.pubip||'').trim();
+  const port=(x,def)=>/^\d{1,5}$/.test(String(x||'').trim())&&+x>0&&+x<65536?String(x).trim():def;
+  a.push('');a.push(ipRe.test(pub)?pub:(ip?host:''));a.push(port(v.sport,'51200'));a.push(port(v.sport2,'51201'))}
  return a}
 const sel=()=>{const s=$('script').value;
  $('f-setup').classList.toggle('hide',s!=='setup');
