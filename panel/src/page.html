@@ -256,6 +256,11 @@ function renderHy2(){const box=$('hy2form');box.innerHTML='';
   d.appendChild(el);
   if(f.desc){const h=document.createElement('div');h.className='fdesc';h.textContent=L('sub_desc_'+((HY2V[f.k]==='n')?'n':'y'));d.appendChild(h)}
   g.appendChild(d)})}
+// Answers are fed to install.sh (and, when a subscription is requested, to the setup.sh it
+// spawns with the same stdin). The order below mirrors the scripts' `read` order — if either
+// script changes its prompts, this function must change with it. Sequence for the default path:
+//   user, proto, listen, portHopEnd, nodePw, obfsPw, name, connect, host, confirm,
+//   [subscribe, access, publicIp, httpsPort, httpPort]
 function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
  a.push(y?'y':'');
  if(y){a.push(v.uname||'');a.push(v.upass||'')}
@@ -276,7 +281,7 @@ function composeHy2(){const v=HY2V,a=[];const y=v.user==='y';
   const ip=ipRe.test(host)&&!priv.test(host);
   const pub=(v.pubip||'').trim();
   const port=(x,def)=>/^\d{1,5}$/.test(String(x||'').trim())&&+x>0&&+x<65536?String(x).trim():def;
-  a.push('');a.push(ipRe.test(pub)?pub:(ip?host:''));a.push(port(v.sport,'51200'));a.push(port(v.sport2,'51201'))}
+  a.push('');a.push('');a.push(ipRe.test(pub)?pub:(ip?host:''));a.push(port(v.sport,'51200'));a.push(port(v.sport2,'51201'))}
  return a}
 const sel=()=>{const s=$('script').value;
  $('f-setup').classList.toggle('hide',s!=='setup');
