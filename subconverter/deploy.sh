@@ -56,14 +56,17 @@ log_progress() { echo "$*" >&2; }
 # Debian 11 这类已过期系统，阿里云安全源的 deb 会 404。安装失败时整份换成归档源再试一次。
 use_debian_archive() {
   [ "$PM" = "apt" ] || return 1
-  [ -f /etc/os-release ] || return 1
-  local id codename
-  id=$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")
-  codename=$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}")
-  [ "$id" = "debian" ] && [ -n "$codename" ] || return 1
-  log_progress "      >> 系统源的安装包 404 了，改用 archive.debian.org"
-  printf 'deb http://archive.debian.org/debian %s main contrib non-free\ndeb http://archive.debian.org/debian-security %s-security main contrib non-free\n' "$codename" "$codename" > /etc/apt/sources.list
-  apt-get -o Acquire::Check-Valid-Until=false update -qq || return 1
+  # 安全源的 deb 404 时，不要改去国外归档站（国内云主机上 apt update 会停很久）。
+  # 主源一般还在，把安全源注释掉再装主源里的版本。
+  log_progress "      >> 安全源的包装不上，关掉安全源，改用主源里的版本"
+  local f
+  shopt -s nullglob
+  for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+    [ -f "$f" ] || continue
+    sed -i -E '/debian-security|[[:space:]][a-z]+-security[[:space:]]/s/^(deb(-src)?)[[:space:]]/# \1 /' "$f"
+  done
+  shopt -u nullglob
+  apt-get update -qq || return 1
 }
 
 # ---------- 包安装 (去 >/dev/null, 输出可见, 超时600s) ----------
@@ -126,7 +129,7 @@ pkg_install() {
     if [ -z "$holder" ]; then
       if [ "${_archive_tried:-0}" = "0" ] && use_debian_archive; then
         _archive_tried=1
-        log_progress "      >> 已换归档源，再装一次"
+        log_progress "      >> 已关掉坏掉的安全源，再装一次"
         continue
       fi
       log_progress "[X] 安装失败: $pkgs (非锁占用, 多为软件源错误或包不可用)"
