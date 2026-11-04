@@ -420,7 +420,30 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
     wait_pkg_lock 120 "/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock"
     dpkg --configure -a 2>/dev/null || true
     export DEBIAN_FRONTEND=noninteractive
-    retry_cmd 4 apt-get update -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+    # 一条 backports 没有 Release 文件时，apt-get update 会整次失败（Debian 11 在阿里云上就是这样）。
+    # 先关掉 backports。还不行再改成归档源。需要的包都在主源里。
+    relax_apt_sources() {
+        local f
+        shopt -s nullglob
+        for f in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            [ -f "$f" ] || continue
+            sed -i -E '/backports/s/^(deb(-src)?)[[:space:]]/# \1 /' "$f"
+            sed -i -E '/^[[:space:]]*Suites:/s/[[:space:]]+[A-Za-z0-9.+-]*-backports//g' "$f"
+        done
+        shopt -u nullglob
+    }
+    relax_apt_sources
+    APT_COMMON=(-qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+    if ! retry_cmd 3 apt-get update "${APT_COMMON[@]}"; then
+        codename=$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}")
+        if [[ "$OS_ID" == "debian" && -n "$codename" ]]; then
+            echo ">> 主源也更新失败，改用 archive.debian.org"
+            printf 'deb http://archive.debian.org/debian %s main contrib non-free\ndeb http://archive.debian.org/debian-security %s-security main contrib non-free\n' "$codename" "$codename" > /etc/apt/sources.list
+            retry_cmd 3 apt-get -o Acquire::Check-Valid-Until=false update "${APT_COMMON[@]}"
+        else
+            exit 1
+        fi
+    fi
     retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 sudo ufw jq openssl
 else
     disable_auto_update
