@@ -53,9 +53,23 @@ detect_pm
 # 进度输出走 stderr (无缓冲, 不会因 SSH 管道卡住不显示)
 log_progress() { echo "$*" >&2; }
 
+# Debian 11 这类已过期系统，阿里云安全源的 deb 会 404。安装失败时整份换成归档源再试一次。
+use_debian_archive() {
+  [ "$PM" = "apt" ] || return 1
+  [ -f /etc/os-release ] || return 1
+  local id codename
+  id=$(. /etc/os-release 2>/dev/null; printf '%s' "${ID:-}")
+  codename=$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}")
+  [ "$id" = "debian" ] && [ -n "$codename" ] || return 1
+  log_progress "      >> 系统源的安装包 404 了，改用 archive.debian.org"
+  printf 'deb http://archive.debian.org/debian %s main contrib non-free\ndeb http://archive.debian.org/debian-security %s-security main contrib non-free\n' "$codename" "$codename" > /etc/apt/sources.list
+  apt-get -o Acquire::Check-Valid-Until=false update -qq || return 1
+}
+
 # ---------- 包安装 (去 >/dev/null, 输出可见, 超时600s) ----------
 pkg_install() {
   local pkgs="$1" n=0 holder rc PMOPTS=""
+  local _archive_tried=0
   if [ "$PM" = "apt" ]; then
     PMOPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=45 -o Acquire::https::Timeout=45"
   else
@@ -110,6 +124,11 @@ pkg_install() {
     fi
     holder=$(pgrep -af "unattended-upgrade|apt-get|dpkg|dnf|yum" 2>/dev/null | grep -v "$$" | head -1 | cut -c1-90)
     if [ -z "$holder" ]; then
+      if [ "${_archive_tried:-0}" = "0" ] && use_debian_archive; then
+        _archive_tried=1
+        log_progress "      >> 已换归档源，再装一次"
+        continue
+      fi
       log_progress "[X] 安装失败: $pkgs (非锁占用, 多为软件源错误或包不可用)"
       log_progress "   解决: 手动 apt-get update / dnf makecache 看具体报错"
       return 1
