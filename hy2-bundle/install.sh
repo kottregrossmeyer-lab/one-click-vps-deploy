@@ -60,6 +60,57 @@ retry_cmd() {
     done
 }
 
+# 镜像上按架构放的静态程序。系统源没有、或者装起来很慢时用这个，不跟发行版走。
+fetch_url() {
+    local url="$1" dest="$2" i=1
+    while [[ $i -le 3 ]]; do
+        rm -f "${dest}.part"
+        if curl -fSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 120 -o "${dest}.part" "$url" \
+           && [[ -s "${dest}.part" ]]; then
+            mv -f "${dest}.part" "$dest"
+            return 0
+        fi
+        rm -f "${dest}.part"
+        echo "!! 下载没完成，再试 ($i/3)"
+        sleep $((i*2))
+        i=$((i+1))
+    done
+    return 1
+}
+ensure_jq() {
+    command -v jq >/dev/null 2>&1 && return 0
+    local arch
+    case "$(uname -m)" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) echo "!! 没有 jq，也不认识这个架构: $(uname -m)" >&2; return 1 ;;
+    esac
+    echo ">> 系统里没有 jq，从镜像拿静态版 (${arch})"
+    fetch_url "https://mirror.notebase.cn/bundle/tools/jq-linux-${arch}" /tmp/jq.bin || return 1
+    install -m 755 /tmp/jq.bin /usr/local/bin/jq
+    rm -f /tmp/jq.bin
+    command -v jq >/dev/null 2>&1
+}
+issue_le() {
+    local src home=/root/.acme.sh
+    echo -e "${GREEN}>> 从镜像安装 acme.sh 申请证书（不依赖系统里的 certbot）${NC}"
+    rm -rf /tmp/acme.sh-src /tmp/acme.sh.tar.gz
+    mkdir -p /tmp/acme.sh-src
+    fetch_url "https://mirror.notebase.cn/bundle/tools/acme.sh.tar.gz" /tmp/acme.sh.tar.gz || return 1
+    tar tzf /tmp/acme.sh.tar.gz >/dev/null 2>&1 || return 1
+    tar xzf /tmp/acme.sh.tar.gz -C /tmp/acme.sh-src --no-same-owner || return 1
+    src=$(find /tmp/acme.sh-src -name acme.sh -type f | head -1 || true)
+    [[ -n "$src" ]] || return 1
+    "$src" --install --home "$home" --accountemail "$LE_EMAIL" || return 1
+    mkdir -p "/etc/letsencrypt/live/$NODE_HOST"
+    "$home/acme.sh" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
+    "$home/acme.sh" --issue --standalone -d "$NODE_HOST" --server letsencrypt || return 1
+    "$home/acme.sh" --install-cert -d "$NODE_HOST" \
+        --fullchain-file "/etc/letsencrypt/live/$NODE_HOST/fullchain.pem" \
+        --key-file "/etc/letsencrypt/live/$NODE_HOST/privkey.pem" \
+        --reloadcmd "systemctl try-restart sing-box"
+}
+
 # ========== 交互式配置 ==========
 echo -e "${CYAN}${BOLD}========================================${NC}"
 echo -e "${CYAN}${BOLD}   sing-box 一键部署脚本 (HY2 / VLESS)${NC}"
@@ -444,7 +495,8 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
             exit 1
         fi
     fi
-    retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 sudo ufw jq openssl
+    retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 sudo ufw openssl
+    ensure_jq
 else
     disable_auto_update
     wait_pkg_lock 120 "/var/lib/dnf/*.lock"
@@ -457,7 +509,8 @@ echo -e "${GREEN}>> 首次刷新 dnf 仓库元数据 (视网速需 1-3 分钟, �
     timeout 180 dnf -y makecache >/dev/null 2>&1 || true
     # openssl 已有就不装(避免升级导致 sshd OpenSSL 版本不匹配而锁死)
     command -v openssl >/dev/null 2>&1 || retry_cmd 3 dnf install -y openssl
-    retry_cmd 3 dnf install -y sudo jq
+    retry_cmd 3 dnf install -y sudo
+    ensure_jq
     # 保险: 若 sshd 因 OpenSSL 版本不匹配无法启动, 自动重装 openssh-server(防止 root 被锁死)
     if ! systemctl is-active --quiet sshd; then
         systemctl start sshd 2>/dev/null || true
@@ -589,9 +642,18 @@ if [[ "$CERT_MODE" == "none" ]]; then
 echo -e "${GREEN}>> VLESS Reality 免证书${NC}"
 elif [[ "$CERT_MODE" == "le" ]]; then
 echo -e "${GREEN}>> 正在申请 Let's Encrypt 证书 ($NODE_HOST) ...${NC}"
-    if [[ "$OS_FAMILY" == "debian" ]]; then apt install -y certbot; else dnf install -y certbot; fi
-    if certbot certonly --standalone --non-interactive --agree-tos -m "$LE_EMAIL" \
-        -d "$NODE_HOST" --deploy-hook "systemctl try-restart sing-box"; then
+    le_ok=0
+    if issue_le; then
+        le_ok=1
+    else
+        echo ">> 镜像里的 acme.sh 没申请到，再试系统源的 certbot"
+        if [[ "$OS_FAMILY" == "debian" ]]; then apt-get install -y certbot || true; else dnf install -y certbot || true; fi
+        if command -v certbot >/dev/null 2>&1 && certbot certonly --standalone --non-interactive --agree-tos -m "$LE_EMAIL" \
+            -d "$NODE_HOST" --deploy-hook "systemctl try-restart sing-box"; then
+            le_ok=1
+        fi
+    fi
+    if [[ "$le_ok" == "1" ]]; then
 echo -e "${GREEN}>> LE 证书已颁发: $NODE_HOST${NC}"
     else
         echo -e "${RED}!! LE 证书申请失败,回退自签证书(客户端导入链接自动跳过证书校验)${NC}"
