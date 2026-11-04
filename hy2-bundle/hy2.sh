@@ -34,7 +34,10 @@ echo "[提示] 较老的系统(如 Debian 9 / Ubuntu 18 / CentOS 7-8 等已 EOL 
 
 # 下到旁边的临时文件，确认是完整 tar 才替换。中途断线不会把已经能用的旧包写坏。
 fetch_pkg() {
-  local dest="$1" use_z="$2" tmp="${dest}.part" i=1
+  local dest="$1"
+  local use_z="$2"
+  local tmp="${dest}.part"
+  local i=1
   while [[ $i -le 4 ]]; do
     rm -f "$tmp"
     local args=(-fSL --retry 2 --retry-delay 2 --connect-timeout 20 --max-time 180 -o "$tmp")
