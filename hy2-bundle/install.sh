@@ -523,7 +523,7 @@ echo -e "${GREEN}>> 镜像失败，改从 GitHub 下载 ...${NC}"
         echo "!! sing-box 安装包下载失败（镜像和 GitHub 都没有拿到完整包）" >&2
         exit 1
     fi
-    tar xzf /tmp/sing-box.tar.gz -C /tmp
+    tar xzf /tmp/sing-box.tar.gz -C /tmp --no-same-owner
     # hk 包内层直接是 sing-box 二进制;GitHub 包带版本目录,find 兜底
     SBIN=$(find /tmp -maxdepth 3 -name sing-box -type f 2>/dev/null | head -1 || true)
     [[ -n "$SBIN" ]] || { echo "!! 未找到 sing-box 二进制" >&2; exit 1; }

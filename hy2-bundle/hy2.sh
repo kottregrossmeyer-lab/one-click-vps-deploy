@@ -82,6 +82,6 @@ tar tzf "$PKG" >/dev/null 2>&1 || { echo "[X] 部署包损坏，删掉 /tmp/hy2-
 
 echo "[2/2] 解压并启动部署..."
 rm -rf /tmp/hy2-bundle
-tar xzf "$PKG" -C /tmp
+tar xzf "$PKG" -C /tmp --no-same-owner
 
 exec bash /tmp/hy2-bundle/install.sh

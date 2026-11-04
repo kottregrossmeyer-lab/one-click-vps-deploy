@@ -56,7 +56,7 @@ fi
 
 echo "[2/3] 解压..."
 mkdir -p /tmp/subconverter
-tar -xzf /tmp/subconverter-deploy.tar.gz -C /tmp/subconverter
+tar -xzf /tmp/subconverter-deploy.tar.gz -C /tmp/subconverter --no-same-owner
 cd /tmp/subconverter
 
 echo "[3/3] 开始交互式部署..."
