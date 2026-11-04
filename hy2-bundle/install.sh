@@ -101,7 +101,8 @@ issue_le() {
     tar xzf /tmp/acme.sh.tar.gz -C /tmp/acme.sh-src --no-same-owner || return 1
     src=$(find /tmp/acme.sh-src -name acme.sh -type f | head -1 || true)
     [[ -n "$src" ]] || return 1
-    "$src" --install --home "$home" --accountemail "$LE_EMAIL" || return 1
+    # --install 只在当前目录找 acme.sh，必须先进入解压目录
+    ( cd "$(dirname "$src")" && ./acme.sh --install --home "$home" --accountemail "$LE_EMAIL" ) || return 1
     mkdir -p "/etc/letsencrypt/live/$NODE_HOST"
     "$home/acme.sh" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
     "$home/acme.sh" --issue --standalone -d "$NODE_HOST" --server letsencrypt || return 1
