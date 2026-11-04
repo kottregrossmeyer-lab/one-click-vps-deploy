@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>VPS deploy panel</title>
 <style>
 :root{--bg:#0f1115;--card:#171a21;--bd:#2a2f3a;--fg:#e6e9ef;--mut:#8b93a3;--acc:#4f8cff;--ok:#3ecf8e;--bad:#ff6b6b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}html,body{touch-action:manipulation}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:980px;margin:0 auto;padding:20px;position:relative}h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
-input,textarea,select{width:100%;background:#0c0e12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}
+input,textarea,select{width:100%;background:#0c0e12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}.pwbox{position:relative}.pwbox input{padding-right:42px}.pwbox .eye{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:36px;height:32px;padding:0;background:transparent;color:var(--mut);border:0;display:flex;align-items:center;justify-content:center}.pwbox .eye.on{color:var(--fg)}@media (max-width:640px){input,textarea,select{font-size:16px}}
 textarea{font-family:ui-monospace,Consolas,monospace;min-height:64px}
 button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:9px 16px;font:inherit;cursor:pointer}button.sec{background:#2a2f3a}button:disabled{opacity:.5;cursor:default}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
@@ -73,7 +73,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="host">VPS host / IP</label><input id="host" placeholder="203.0.113.10"></div>
 <div><label data-i="port">SSH port</label><input id="port" value="22"></div>
 <div><label data-i="user">SSH user</label><input id="user" value="root"></div>
-<div><label data-i="pw">Password</label><input id="pw" type="password" autocomplete="off"></div>
+<div><label data-i="pw">Password</label><div class="pwbox"><input id="pw" type="password" autocomplete="off"><button type="button" class="eye" id="pweye" aria-label="Show password"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
 </div>
 <div style="margin-top:12px"><label data-i="key">…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)</label><textarea id="key" spellcheck="false"></textarea></div>
 <div class="grid" style="margin-top:12px">
@@ -135,7 +135,7 @@ const I={
   k_conf_t:'Shadowrocket rules',k_conf_d:'Shadowrocket needs both: nodes from a subscription above, routing from this .conf. You can rename the last path segment',
   k_clash_t:'Clash subscription',k_clash_d:'Forces Clash / Mihomo YAML output',k_share_t:'Node share link',k_share_d:'Paste it into your client — the protocol is detected automatically',k_other_t:'Link',k_other_d:'',
   idle:'idle',starting:'connecting + launching (~3s)…',job:'job',streaming:'streaming… ',streamEnd:'stream ended',finished:'finished, exit=',running:'running… ',
-  err:'error: ',cancelRes:'cancel: ',cancelErr:'cancel error: ',resume:'Resume',copy:'Copy',dryTag:' (dry)',killed:'job killed',nothing:'nothing to kill (job may have finished)',
+  err:'error: ',cancelRes:'cancel: ',cancelErr:'cancel error: ',resume:'Resume',needPw:'Enter the SSH password first',copy:'Copy',dryTag:' (dry)',killed:'job killed',nothing:'nothing to kill (job may have finished)',
   langLabel:'Language'
  },
  zh:{
@@ -171,7 +171,7 @@ const I={
   k_conf_t:'小火箭规则',k_conf_d:'小火箭要两条：节点用上面的订阅，分流用这条 conf；最后一段名字可改，保留 .conf 结尾',
   k_clash_t:'Clash 订阅',k_clash_d:'强制返回 Clash / Mihomo 的 YAML',k_share_t:'节点分享链接',k_share_d:'直接填进客户端即可，协议自动识别',k_other_t:'其他链接',k_other_d:'',
   idle:'空闲',starting:'正在连接并启动任务（约 3 秒）…',job:'任务',streaming:'实时输出中… ',streamEnd:'实时输出已结束',finished:'已结束，退出码 ',running:'运行中… ',
-  err:'错误：',cancelRes:'取消：',cancelErr:'取消失败：',resume:'继续查看',copy:'复制',dryTag:'（试运行）',killed:'已终止任务',nothing:'没有可终止的进程（任务可能已结束）',
+  err:'错误：',cancelRes:'取消：',cancelErr:'取消失败：',resume:'继续查看',needPw:'请先填写密码',copy:'复制',dryTag:'（试运行）',killed:'已终止任务',nothing:'没有可终止的进程（任务可能已结束）',
   langLabel:'语言'
  }
 };
@@ -256,7 +256,8 @@ function renderHy2(){const box=$('hy2form');box.innerHTML='';
   else{el=document.createElement('input');el.type=f.t==='password'?'password':f.t==='number'?'number':'text';el.value=HY2V[f.k]||'';}
   const on=()=>{HY2V[f.k]=el.value;if(f.t==='select'){HY2V[f.k]=el.value;renderHy2()}};
   if(f.t==='select')el.onchange=on;else el.oninput=on;
-  d.appendChild(el);
+  if(f.t==='password'){const wrap=document.createElement('div');wrap.className='pwbox';const eye=document.createElement('button');eye.type='button';eye.className='eye';eye.innerHTML=$('pweye').innerHTML;eye.onclick=ev=>{ev.preventDefault();const show=el.type==='password';el.type=show?'text':'password';eye.classList.toggle('on',show)};wrap.append(el,eye);d.appendChild(wrap)}
+  else d.appendChild(el);
   if(f.desc){const h=document.createElement('div');h.className='fdesc';h.textContent=L('sub_desc_'+((HY2V[f.k]==='n')?'n':'y'));d.appendChild(h)}
   g.appendChild(d)})}
 // Answers are fed to install.sh (and, when a subscription is requested, to the setup.sh it
@@ -354,9 +355,14 @@ async function run(stream){if(running)return;
  buf='';paint();$('res').classList.add('hide');setSt(()=>L('starting'));
  const body={host:$('host').value.trim(),port:$('port').value.trim(),user:$('user').value.trim(),password:$('pw').value,key:$('key').value,script:$('script').value,dry:$('dry').checked,turnstile:TS_TOKEN,
   args:{link:$('link').value,link2:$('link2').value,httpsPort:$('hp').value.trim(),httpPort:$('hp2').value.trim(),publicIp:$('pip').value.trim(),answers:$('script').value==='hy2'?composeHy2():[]}};
- try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);$('pw').value='';$('key').value='';await follow(rec,0,stream);mountTurnstile()}
+ try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);await follow(rec,0,stream);mountTurnstile()}
  catch(e){setSt(()=>L('err')+e.message,'err');if(/人机|human check/i.test(e.message||''))mountTurnstile()}}
-async function resume(j){if(running)return;buf='';paint();await follow(j,0,false)}
+async function resume(j){if(running)return;
+ if(!$('pw').value && !$('key').value.trim()){setSt(()=>L('needPw'),'err');$('pw').focus();$('pw').scrollIntoView({behavior:'smooth',block:'center'});return}
+ buf='';paint();$('log').scrollIntoView({behavior:'smooth',block:'start'});await follow(j,0,false)}
+$('pweye').onclick=()=>{const show=$('pw').type==='password';$('pw').type=show?'text':'password';$('pweye').classList.toggle('on',show)};
+document.addEventListener('gesturestart',e=>e.preventDefault());
+document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
 $('go').onclick=()=>run(false);$('gostream').onclick=()=>run(true);
 $('cancel').onclick=async()=>{if(!cur)return;try{const r=await api('cancel',{ticket:cur.ticket});setSt(()=>L('cancelRes')+(/killed/.test(r.result)?L('killed'):L('nothing')))}catch(e){setSt(()=>L('cancelErr')+e.message,'err')}};
 applyLang();

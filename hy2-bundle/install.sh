@@ -833,36 +833,43 @@ echo -e "${CYAN}===== 10. 配置 firewalld =====${NC}"
 fi
 
 # ========== 13. SSH 安全加固(仅创建用户时) ==========
+# 不能在脚本还没跑完时重启 sshd。面板每隔几秒用 root 重新连上来读日志，
+# 立刻禁止 root 会把这次连接踢掉，网页就显示密码错误，脚本也跟着断。
+# 云厂商的 sshd_config.d（例如 50-cloud-init.conf）常常先写了
+# PasswordAuthentication no，主配置里再改 yes 也不生效。
+# 所以等本脚本退出 20 秒后，再写一个排在最前面的 drop-in 并 reload。
 if [[ "$USER_CREATED" == "1" ]]; then
 echo -e "${CYAN}===== 13. SSH 安全加固 =====${NC}"
-SSHD_CONFIG="/etc/ssh/sshd_config"
-cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.$(date +%Y%m%d%H%M%S)"
-
-# 两种模式都禁止 root 任何方式 SSH 登录
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' "$SSHD_CONFIG"
-grep -q "^PermitRootLogin" "$SSHD_CONFIG" || echo "PermitRootLogin no" >> "$SSHD_CONFIG"
-
-if [[ "$SSH_MODE" == "2" ]]; then
-    # 密钥登录:仅允许密钥
-    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CONFIG"
-    sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "$SSHD_CONFIG"
-    grep -q "^PasswordAuthentication" "$SSHD_CONFIG" || echo "PasswordAuthentication no" >> "$SSHD_CONFIG"
-    grep -q "^ChallengeResponseAuthentication" "$SSHD_CONFIG" || echo "ChallengeResponseAuthentication no" >> "$SSHD_CONFIG"
-echo -e "${GREEN}>> SSH 已加固：禁止 root 登录、仅允许密钥登录${NC}"
-else
-    # 密码登录:禁止 root,允许普通用户密码
-    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' "$SSHD_CONFIG"
-    sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication yes/' "$SSHD_CONFIG"
-    grep -q "^PasswordAuthentication" "$SSHD_CONFIG" || echo "PasswordAuthentication yes" >> "$SSHD_CONFIG"
-    grep -q "^ChallengeResponseAuthentication" "$SSHD_CONFIG" || echo "ChallengeResponseAuthentication yes" >> "$SSHD_CONFIG"
-echo -e "${GREEN}>> SSH 已加固：禁止 root 任何方式登录,普通用户可密码登录${NC}"
+LOCK_PID=$$
+if [[ "$SSH_MODE" == "2" ]]; then LOCK_PW=no; else LOCK_PW=yes; fi
+cat > /tmp/hy2-ssh-lock.sh << EOF
+#!/bin/bash
+while kill -0 $LOCK_PID 2>/dev/null; do sleep 2; done
+sleep 20
+mkdir -p /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-hy2-lock.conf << 'CNF'
+PermitRootLogin no
+PasswordAuthentication $LOCK_PW
+KbdInteractiveAuthentication $LOCK_PW
+PubkeyAuthentication yes
+CNF
+if sshd -t 2>/dev/null || /usr/sbin/sshd -t 2>/dev/null; then
+  systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
 fi
-
-# 两种模式都保留公钥认证
-sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' "$SSHD_CONFIG"
-grep -q "^PubkeyAuthentication" "$SSHD_CONFIG" || echo "PubkeyAuthentication yes" >> "$SSHD_CONFIG"
-
-systemctl restart sshd
+EOF
+chmod 700 /tmp/hy2-ssh-lock.sh
+if command -v setsid >/dev/null 2>&1; then
+  setsid nohup /tmp/hy2-ssh-lock.sh >/dev/null 2>&1 &
+else
+  nohup /tmp/hy2-ssh-lock.sh >/dev/null 2>&1 &
+fi
+disown 2>/dev/null || true
+if [[ "$SSH_MODE" == "2" ]]; then
+  echo -e "${GREEN}>> SSH 加固排在脚本结束 20 秒后：禁止 root，只允许密钥登录${NC}"
+else
+  echo -e "${GREEN}>> SSH 加固排在脚本结束 20 秒后：禁止 root，请改用新用户 $NEW_USER 密码登录${NC}"
+fi
+echo "   现在不会踢掉当前连接，脚本可以跑完。"
 else
     echo ">> 跳过 SSH 加固 (未创建新用户, 保持原 SSH 访问)"
 fi
