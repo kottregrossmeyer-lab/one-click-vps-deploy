@@ -495,7 +495,27 @@ if [[ "$OS_FAMILY" == "debian" ]]; then
             exit 1
         fi
     fi
-    retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 sudo ufw openssl
+    # 已有的包不升级。Debian 11 的安全源经常 404，一升级 openssl/sudo 就把整次安装拖死。
+    deb_need=()
+    command -v sudo >/dev/null 2>&1 || deb_need+=(sudo)
+    command -v ufw >/dev/null 2>&1 || deb_need+=(ufw)
+    command -v openssl >/dev/null 2>&1 || deb_need+=(openssl)
+    if [[ ${#deb_need[@]} -gt 0 ]]; then
+        echo ">> 只装缺少的包: ${deb_need[*]}"
+        if ! retry_cmd 3 apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "${deb_need[@]}"; then
+            codename=$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}")
+            if [[ "$OS_ID" == "debian" && -n "$codename" ]]; then
+                echo ">> 安装包 404 了，改用 archive.debian.org 再装"
+                printf 'deb http://archive.debian.org/debian %s main contrib non-free\ndeb http://archive.debian.org/debian-security %s-security main contrib non-free\n' "$codename" "$codename" > /etc/apt/sources.list
+                retry_cmd 3 apt-get -o Acquire::Check-Valid-Until=false update "${APT_COMMON[@]}"
+                retry_cmd 3 apt-get -o Acquire::Check-Valid-Until=false install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "${deb_need[@]}"
+            else
+                exit 1
+            fi
+        fi
+    else
+        echo ">> sudo、ufw、openssl 都已存在，跳过，避免去升已经下架的旧包"
+    fi
     ensure_jq
 else
     disable_auto_update
