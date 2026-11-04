@@ -538,12 +538,6 @@ else
   log_progress "  [OK] nginx 已就绪"
 fi
 
-# certbot (域名模式才需要)
-if [ "$MODE" != "2" ] && ! command -v certbot >/dev/null 2>&1; then
-  log_progress "  -> 安装 certbot..."
-  pkg_install certbot || { echo "[X] certbot 安装失败"; exit 1; }
-fi
-
 # 选择 Python: server.py 需要 >=3.7 (ThreadingHTTPServer); EL8 默认 python3=3.6 会崩
 # 优先 python3.11(install_certbot_pip 也会装它), 其次满足 3.7+ 的 python3, 都没有则补装
 if command -v python3.11 >/dev/null 2>&1; then
@@ -624,35 +618,57 @@ elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active firewalld >/
 fi
 
 # ---------- 7. 证书 ----------
+# 不再装 certbot。5.3 以上要 pip + Python>=3.10，旧系统上经常装失败。
+# acme.sh 是一个 shell 脚本，域名和公网 IP 都能申请。
+ACME=/root/.acme.sh/acme.sh
+ensure_acme() {
+  local src
+  if [ -x "$ACME" ]; then
+    return 0
+  fi
+  log_progress "   (从镜像安装 acme.sh)"
+  rm -rf /tmp/acme.sh-src /tmp/acme.sh.tar.gz
+  mkdir -p /tmp/acme.sh-src
+  curl -fSL --retry 2 --retry-delay 2 --connect-timeout 15 --max-time 120 \
+    -o /tmp/acme.sh.tar.gz https://mirror.notebase.cn/bundle/tools/acme.sh.tar.gz || return 1
+  tar tzf /tmp/acme.sh.tar.gz >/dev/null 2>&1 || return 1
+  tar xzf /tmp/acme.sh.tar.gz -C /tmp/acme.sh-src --no-same-owner || return 1
+  src=$(find /tmp/acme.sh-src -name acme.sh -type f | head -1 || true)
+  [ -n "$src" ] || return 1
+  "$src" --install --home /root/.acme.sh || return 1
+  [ -x "$ACME" ]
+}
+save_issued() {
+  local name="$1" crt="$2" key="$3"
+  mkdir -p "$(dirname "$crt")" "$(dirname "$key")"
+  "$ACME" --install-cert -d "$name" \
+    --fullchain-file "$crt" --key-file "$key" --reloadcmd "true"
+}
+
 echo -e "${CYAN}[6]${NC} 准备证书..."
 CERT=""; CERTKEY=""
 REAL_OK=0
 case "$MODE" in
-  2) # 公网 IP: 优先真证书, 失败回退自签名
-    if ! certbot_ge_53; then
-      log_progress "   (pip 安装 certbot >=5.3, 首次较慢请耐心等待...)"
-      install_certbot_pip
-    fi
-    if certbot_ge_53; then
-      log_progress "   (为公网 IP $PUBIP 申请 Let's Encrypt 证书, 需80端口可公网访问...)"
-      if timeout 180 certbot certonly --standalone --ip-address "$PUBIP" \
-           --preferred-profile shortlived --preferred-challenges http-01 \
-           --non-interactive --agree-tos --register-unsafely-without-email \
-           --pre-hook "systemctl stop nginx" \
-           --post-hook "systemctl start nginx" \
-           --deploy-hook "systemctl reload nginx" >/dev/null 2>&1; then
-        CERT_DIR="$(ls -td /etc/letsencrypt/live/*/ 2>/dev/null | head -1)"
-        CERT="${CERT_DIR}fullchain.pem"
-        CERTKEY="${CERT_DIR}privkey.pem"
-        REAL_OK=1
-        setup_renew_timer
+  2)
+    if ensure_acme; then
+      log_progress "   (为公网 IP $PUBIP 申请证书，80 端口要能从公网访问)"
+      systemctl stop nginx >/dev/null 2>&1 || true
+      rc=0
+      "$ACME" --issue --server letsencrypt --cert-profile shortlived --days 3 \
+        -d "$PUBIP" --standalone || rc=$?
+      systemctl start nginx >/dev/null 2>&1 || true
+      if [ "$rc" = "0" ] || [ "$rc" = "2" ]; then
+        if save_issued "$PUBIP" /etc/nginx/ssl/ip.crt /etc/nginx/ssl/ip.key; then
+          CERT=/etc/nginx/ssl/ip.crt
+          CERTKEY=/etc/nginx/ssl/ip.key
+          REAL_OK=1
+        fi
       else
-        log_progress "   [注意] Let's Encrypt 真证书申请失败, 回退自签名证书"
-        log_progress "     (常见原因: 云安全组未放行 80 端口 / IP 不可达)"
-        systemctl start nginx >/dev/null 2>&1 || true
+        log_progress "   [注意] 真证书没申请到，改用自签名"
+        log_progress "     (常见原因: 云安全组没放行 80，或这个 IP 从公网访问不到)"
       fi
     else
-      log_progress "   [注意] 无法安装 certbot >=5.3, 使用自签名证书"
+      log_progress "   [注意] acme.sh 没装上，使用自签名证书"
     fi
     if [ "$REAL_OK" != "1" ]; then
       mkdir -p /etc/nginx/ssl
@@ -663,37 +679,45 @@ case "$MODE" in
       CERTKEY=/etc/nginx/ssl/sub.key
     fi
     ;;
-  1) # 域名 + HTTP-01
+  1)
     mkdir -p /var/www/html
-    tee /etc/nginx/conf.d/sub-acme.conf >/dev/null <<EOF
+    tee /etc/nginx/conf.d/sub-acme.conf >/dev/null <<NGX
 server {
     listen 80;
     server_name $DOMAIN;
     location /.well-known/acme-challenge/ { root /var/www/html; }
     location / { return 404; }
 }
-EOF
+NGX
     nginx -t && systemctl reload nginx
-    log_progress "   (certbot HTTP-01 正在为 $DOMAIN 申请证书...)"
-    timeout 240 certbot certonly --webroot -w /var/www/html -d "$DOMAIN" \
-      --non-interactive --agree-tos --register-unsafely-without-email || {
-        echo "[X] certbot 申请失败 (域名解析/80端口放行?)"
-        rm -f /etc/nginx/conf.d/sub-acme.conf
-        exit 1
-      }
+    log_progress "   (为 $DOMAIN 申请证书...)"
+    ensure_acme || { echo "[X] acme.sh 安装失败"; rm -f /etc/nginx/conf.d/sub-acme.conf; exit 1; }
+    rc=0
+    "$ACME" --issue --server letsencrypt -d "$DOMAIN" -w /var/www/html || rc=$?
+    if [ "$rc" != "0" ] && [ "$rc" != "2" ]; then
+      echo "[X] 证书申请失败 (域名解析/80端口放行?)"
+      rm -f /etc/nginx/conf.d/sub-acme.conf
+      exit 1
+    fi
+    save_issued "$DOMAIN" "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem" \
+      || { echo "[X] 证书保存失败"; exit 1; }
     rm -f /etc/nginx/conf.d/sub-acme.conf
     CERT="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
     CERTKEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
     REAL_OK=1
     ;;
-  3) # 域名 + DNS-01
-    echo "   (certbot DNS-01 将为 $DOMAIN 申请证书...)"
-    echo "   [注意] 按提示添加 DNS TXT 记录后回车继续"
-    timeout 240 certbot certonly --manual --preferred-challenges dns -d "$DOMAIN" \
-      --agree-tos --register-unsafely-without-email --manual-public-ip-logging-ok || {
-        echo "[X] DNS-01 申请失败, 请检查 TXT 记录"
-        exit 1
-      }
+  3)
+    echo "   (为 $DOMAIN 申请证书，按提示添加 DNS TXT 记录后回车)"
+    ensure_acme || { echo "[X] acme.sh 安装失败"; exit 1; }
+    rc=0
+    "$ACME" --issue --server letsencrypt --dns -d "$DOMAIN" \
+      --yes-I-know-dns-manual-mode-enough-go-ahead-please || rc=$?
+    if [ "$rc" != "0" ] && [ "$rc" != "2" ]; then
+      echo "[X] DNS-01 申请失败, 请检查 TXT 记录"
+      exit 1
+    fi
+    save_issued "$DOMAIN" "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "/etc/letsencrypt/live/$DOMAIN/privkey.pem" \
+      || { echo "[X] 证书保存失败"; exit 1; }
     CERT="/etc/letsencrypt/live/$DOMAIN/fullchain.pem"
     CERTKEY="/etc/letsencrypt/live/$DOMAIN/privkey.pem"
     REAL_OK=1
@@ -968,7 +992,7 @@ echo ""
 if [ "$MODE" = "2" ]; then
   if [ "$REAL_OK" = "1" ]; then
     echo -e "  ${GREEN}[OK]${NC} 已为公网 IP $PUBIP 申请 ${GREEN}LE 真证书${NC}, HTTPS 无需跳过验证"
-    echo -e "  ${YELLOW}[注意]${NC} 证书有效期约 6.6 天, 自动续期已配置 (certbot-renew.timer)"
+    echo -e "  ${YELLOW}[注意]${NC} 证书有效期约 6.6 天, acme.sh 会自动续期"
   else
     echo -e "  ${YELLOW}[注意]${NC} 自签名证书: HTTPS 需要客户端跳过验证"
     echo -e "      sing-box: tls.insecure=true / Clash: skip-cert-verify: true"
