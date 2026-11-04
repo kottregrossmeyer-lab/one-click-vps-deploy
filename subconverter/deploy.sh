@@ -91,6 +91,25 @@ pkg_install() {
     log_progress "      $pkgs 已安装, 跳过"; return 0
   fi
 
+  # 上一轮如果卡在 archive.debian.org 的 update 上，锁会一直不放，后面就会报找不到 nginx。
+  if pgrep -f 'Acquire::Check-Valid-Until=false update' >/dev/null 2>&1; then
+    log_progress "      >> 停掉上次没结束的软件源更新"
+    pkill -f 'Acquire::Check-Valid-Until=false update' || true
+    sleep 1
+  fi
+  if [ -f /etc/apt/sources.list ] && grep -q 'archive.debian.org' /etc/apt/sources.list; then
+    codename=$(. /etc/os-release 2>/dev/null; printf '%s' "${VERSION_CODENAME:-}")
+    if [ -n "$codename" ]; then
+      mirror=http://deb.debian.org/debian
+      if curl -fsS --max-time 2 http://100.100.100.200/latest/meta-data/instance-id >/dev/null 2>&1; then
+        mirror=http://mirrors.cloud.aliyuncs.com/debian
+      fi
+      log_progress "      >> 软件源被改到了国外归档站，改回主源（不含已下架的安全源）"
+      printf 'deb %s/ %s main contrib non-free\ndeb %s/ %s-updates main contrib non-free\n' "$mirror" "$codename" "$mirror" "$codename" > /etc/apt/sources.list
+      apt-get update -qq || true
+    fi
+  fi
+
   # 先停掉常见的锁占用者 (unattended-upgrades 最多浪费80秒)
   if systemctl is-active --quiet unattended-upgrades 2>/dev/null; then
     log_progress "      (暂停 unattended-upgrades, 装完恢复...)"
