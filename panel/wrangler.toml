@@ -16,7 +16,7 @@ PUBLIC_MODE = "1"
 DAILY_LIMIT = "5"
 GLOBAL_DAILY = "300"
 # Optional human check. Set the sitekey here and: npx wrangler secret put TURNSTILE_SECRET
-# TURNSTILE_SITEKEY = ""
+TURNSTILE_SITEKEY = "0x4AAAAAAFyQhICys3GwNgVt"
 
 # Where the scripts come from. Defaults to this repo's raw files; point these at your
 # own mirror if GitHub is slow where your users are.

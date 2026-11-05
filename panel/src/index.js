@@ -266,6 +266,29 @@ async function limited(env, name, key) {
   try { const { success } = await b.limit({ key }); return !success; } catch { return false; }
 }
 const ctEq = (a, b) => { if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; };
+function cookieVal(req, name) {
+  const raw = req.headers.get('cookie') || '';
+  for (const part of raw.split(';')) {
+    const s = part.trim();
+    const i = s.indexOf('=');
+    if (i > 0 && s.slice(0, i) === name) return s.slice(i + 1);
+  }
+  return '';
+}
+async function humanSign(env, exp) {
+  const key = await crypto.subtle.importKey('raw', enc.encode(env.TICKET_KEY), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(String(exp))));
+  return String(exp) + '.' + b64u(mac);
+}
+async function humanOk(env, token) {
+  if (!env.TICKET_KEY || !token) return false;
+  const i = token.lastIndexOf('.');
+  if (i <= 0) return false;
+  const exp = Number(token.slice(0, i));
+  if (!exp || Date.now() > exp) return false;
+  return ctEq(token, await humanSign(env, exp));
+}
+
 
 export default {
   async fetch(req, env, ctx) {
@@ -286,7 +309,8 @@ export default {
       if (!env.TICKET_KEY) return json({ error: 'server not configured' }, 500);
       let left = null;
       if (isPublic(env) && !owner) { try { left = (await quota(env, ip, false)).left; } catch { left = null; } }
-      return json({ public: isPublic(env), owner, daily: dayLimit(env), left });
+      const human = owner || !env.TURNSTILE_SECRET || await humanOk(env, cookieVal(req, 'dp_pass'));
+      return json({ public: isPublic(env), owner, daily: dayLimit(env), left, human });
     }
     if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
     if (!env.TICKET_KEY || (!isPublic(env) && !env.PANEL_TOKEN)) return json({ error: 'server not configured' }, 500);
@@ -296,12 +320,19 @@ export default {
     }
     let body; try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
     try {
+      if (p === '/api/human') {
+        if (!env.TURNSTILE_SECRET) return json({ ok: true });
+        if (!(await turnstileOk(env, body.turnstile, ip))) return json({ error: 'human check failed' }, 403);
+        const exp = Date.now() + 30 * 60 * 1000;
+        const val = await humanSign(env, exp);
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'set-cookie': `dp_pass=${val}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1800` } });
+      }
       if (p === '/api/start') {
         if (!owner && await limited(env, 'RL_AUTH', 'auth:' + ip)) return json({ error: 'rate limited' }, 429);
         if (await limited(env, 'RL_START', 'start:' + ip)) return json({ error: 'too many job starts, wait a minute' }, 429);
         const o = validateStart(body);
         // 公开使用要过人机验证。部署者令牌不加这一道。没配密钥的自建副本保持原样。
-        if (!owner && env.TURNSTILE_SECRET && !(await turnstileOk(env, body.turnstile, ip))) return json({ error: 'human check failed' }, 403);
+        if (!owner && env.TURNSTILE_SECRET && !(await humanOk(env, cookieVal(req, 'dp_pass'))) && !(await turnstileOk(env, body.turnstile, ip))) return json({ error: 'human check failed' }, 403);
         if (!owner) {
           let q = { ok: true, left: null };
           try { q = await quota(env, ip, true); } catch (e) { /* DO hiccup must not lock everyone out */ }
