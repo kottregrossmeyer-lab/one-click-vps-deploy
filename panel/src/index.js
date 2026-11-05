@@ -137,13 +137,18 @@ function validateStart(b) {
 // ---------- ssh ----------
 function sshOpts(o) {
   const x = { hostname: o.host, port: o.port, username: o.user };
-  if (o.key) x.privateKey = { pem: o.key }; else x.password = o.password;
+  if (o.key) x.privateKey = { pem: o.key };
+  if (o.password) {
+    x.password = o.password;
+    // Debian/云镜像经常关掉 password 方法，只留 keyboard-interactive。终端能登是因为 OpenSSH 会接着试。
+    x.onKeyboardInteractive = async (prompts) => (prompts || []).map(() => o.password);
+  }
   return x;
 }
 async function sshConnect(o) {
   const t = new Promise((_, rej) => setTimeout(() => rej(new UserError('SSH connect/login timed out (20s) - check host, port, firewall, credentials')), 20000));
   try { return await Promise.race([connect(sshOpts(o)), t]); }
-  catch (e) { if (e instanceof UserError) throw e; bad('SSH connect/login failed: ' + String(e && e.message || e).replace(/password[^,;]*/gi, '***').slice(0, 200)); }
+  catch (e) { if (e instanceof UserError) throw e; bad('SSH connect/login failed: ' + String(e && e.message || e).slice(0, 200)); }
 }
 
 // ---------- job script generation (fixed templates; user input only as quoted data) ----------
@@ -284,16 +289,14 @@ export default {
     }
     if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
     if (!env.TICKET_KEY || (!isPublic(env) && !env.PANEL_TOKEN)) return json({ error: 'server not configured' }, 500);
-    if (!owner) {
-      if (!isPublic(env)) {
-        if (await limited(env, 'RL_AUTH', 'auth:' + ip)) return json({ error: 'rate limited' }, 429);
-        return json({ error: 'forbidden' }, 403);
-      }
+    if (!owner && !isPublic(env)) {
       if (await limited(env, 'RL_AUTH', 'auth:' + ip)) return json({ error: 'rate limited' }, 429);
+      return json({ error: 'forbidden' }, 403);
     }
     let body; try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
     try {
       if (p === '/api/start') {
+        if (!owner && await limited(env, 'RL_AUTH', 'auth:' + ip)) return json({ error: 'rate limited' }, 429);
         if (await limited(env, 'RL_START', 'start:' + ip)) return json({ error: 'too many job starts, wait a minute' }, 429);
         const o = validateStart(body);
         // 公开使用要过人机验证。部署者令牌不加这一道。没配密钥的自建副本保持原样。

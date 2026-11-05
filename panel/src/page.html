@@ -8,7 +8,7 @@ main{max-width:980px;margin:0 auto;padding:20px;position:relative}h1{font-size:2
 .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 label{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
-input,textarea,select{width:100%;background:#0c0e12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}.pwbox{position:relative}.pwbox input{padding-right:42px}.pwbox .eye{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:36px;height:32px;padding:0;background:transparent;color:var(--mut);border:0;display:flex;align-items:center;justify-content:center}.pwbox .eye.on{color:var(--fg)}@media (max-width:640px){input,textarea,select{font-size:16px}}
+input,textarea,select{width:100%;background:#0c0e12;color:var(--fg);border:1px solid var(--bd);border-radius:6px;padding:8px;font:inherit}@media (max-width:640px){input,textarea,select{font-size:16px}}
 textarea{font-family:ui-monospace,Consolas,monospace;min-height:64px}
 button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:9px 16px;font:inherit;cursor:pointer}button.sec{background:#2a2f3a}button:disabled{opacity:.5;cursor:default}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
@@ -73,7 +73,7 @@ pre{background:#05070a;border:1px solid var(--bd);border-radius:8px;padding:12px
 <div><label data-i="host">VPS host / IP</label><input id="host" placeholder="203.0.113.10"></div>
 <div><label data-i="port">SSH port</label><input id="port" value="22"></div>
 <div><label data-i="user">SSH user</label><input id="user" value="root"></div>
-<div><label data-i="pw">Password</label><div class="pwbox"><input id="pw" type="password" autocomplete="off"><button type="button" class="eye" id="pweye" aria-label="Show password"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+<div><label data-i="pw">Password</label><input id="pw" type="password" autocomplete="off"></div>
 </div>
 <div style="margin-top:12px"><label data-i="key">…or SSH private key (PKCS8 PEM with a PRIVATE KEY header; optional, used instead of password)</label><textarea id="key" spellcheck="false"></textarea></div>
 <div class="grid" style="margin-top:12px">
@@ -256,8 +256,7 @@ function renderHy2(){const box=$('hy2form');box.innerHTML='';
   else{el=document.createElement('input');el.type=f.t==='password'?'password':f.t==='number'?'number':'text';el.value=HY2V[f.k]||'';}
   const on=()=>{HY2V[f.k]=el.value;if(f.t==='select'){HY2V[f.k]=el.value;renderHy2()}};
   if(f.t==='select')el.onchange=on;else el.oninput=on;
-  if(f.t==='password'){const wrap=document.createElement('div');wrap.className='pwbox';const eye=document.createElement('button');eye.type='button';eye.className='eye';eye.innerHTML=$('pweye').innerHTML;eye.onclick=ev=>{ev.preventDefault();const show=el.type==='password';el.type=show?'text':'password';eye.classList.toggle('on',show)};wrap.append(el,eye);d.appendChild(wrap)}
-  else d.appendChild(el);
+  d.appendChild(el);
   if(f.desc){const h=document.createElement('div');h.className='fdesc';h.textContent=L('sub_desc_'+((HY2V[f.k]==='n')?'n':'y'));d.appendChild(h)}
   g.appendChild(d)})}
 // Answers are fed to install.sh (and, when a subscription is requested, to the setup.sh it
@@ -360,7 +359,6 @@ async function run(stream){if(running)return;
 async function resume(j){if(running)return;
  if(!$('pw').value && !$('key').value.trim()){setSt(()=>L('needPw'),'err');$('pw').focus();$('pw').scrollIntoView({behavior:'smooth',block:'center'});return}
  buf='';paint();$('log').scrollIntoView({behavior:'smooth',block:'start'});await follow(j,0,false)}
-$('pweye').onclick=()=>{const show=$('pw').type==='password';$('pw').type=show?'text':'password';$('pweye').classList.toggle('on',show)};
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
 $('go').onclick=()=>run(false);$('gostream').onclick=()=>run(true);
