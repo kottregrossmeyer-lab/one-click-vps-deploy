@@ -135,7 +135,7 @@ const I={
   k_conf_t:'Shadowrocket rules',k_conf_d:'Shadowrocket needs both: nodes from a subscription above, routing from this .conf. You can rename the last path segment',
   k_clash_t:'Clash subscription',k_clash_d:'Forces Clash / Mihomo YAML output',k_share_t:'Node share link',k_share_d:'Paste it into your client — the protocol is detected automatically',k_other_t:'Link',k_other_d:'',
   idle:'idle',starting:'connecting + launching (~3s)…',job:'job',streaming:'streaming… ',streamEnd:'stream ended',finished:'finished, exit=',running:'running… ',
-  err:'error: ',cancelRes:'cancel: ',cancelErr:'cancel error: ',resume:'Resume',needPw:'Enter the SSH password first',copy:'Copy',dryTag:' (dry)',killed:'job killed',nothing:'nothing to kill (job may have finished)',
+  err:'error: ',cancelRes:'cancel: ',cancelErr:'cancel error: ',resume:'Resume',needPw:'Enter the SSH password first',switched:'SSH login is now the new user',copy:'Copy',dryTag:' (dry)',killed:'job killed',nothing:'nothing to kill (job may have finished)',
   langLabel:'Language'
  },
  zh:{
@@ -171,7 +171,7 @@ const I={
   k_conf_t:'小火箭规则',k_conf_d:'小火箭要两条：节点用上面的订阅，分流用这条 conf；最后一段名字可改，保留 .conf 结尾',
   k_clash_t:'Clash 订阅',k_clash_d:'强制返回 Clash / Mihomo 的 YAML',k_share_t:'节点分享链接',k_share_d:'直接填进客户端即可，协议自动识别',k_other_t:'其他链接',k_other_d:'',
   idle:'空闲',starting:'正在连接并启动任务（约 3 秒）…',job:'任务',streaming:'实时输出中… ',streamEnd:'实时输出已结束',finished:'已结束，退出码 ',running:'运行中… ',
-  err:'错误：',cancelRes:'取消：',cancelErr:'取消失败：',resume:'继续查看',needPw:'请先填写密码',copy:'复制',dryTag:'（试运行）',killed:'已终止任务',nothing:'没有可终止的进程（任务可能已结束）',
+  err:'错误：',cancelRes:'取消：',cancelErr:'取消失败：',resume:'继续查看',needPw:'请先填写密码',switched:'登录已改为新用户',copy:'复制',dryTag:'（试运行）',killed:'已终止任务',nothing:'没有可终止的进程（任务可能已结束）',
   langLabel:'语言'
  }
 };
@@ -324,14 +324,30 @@ function showResult(){const t=strip(buf);const clean=u=>u.replace(/[)\]）】，
   hv.append(a,c);row.append(hk,hv);b.appendChild(row)})}
 function paint(){const el=$('log');const atEnd=el.scrollTop+el.clientHeight>=el.scrollHeight-20;el.textContent=strip(buf);if(atEnd)el.scrollTop=el.scrollHeight}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function createdLogin(){const t=strip(buf);const m=t.match(/已创建用户\s+([a-z_][a-z0-9_-]*)/i);if(!m)return null;
+ const user=m[1],keyMode=/只允许密钥登录/.test(t);
+ let password='';
+ const pm=t.match(new RegExp('(?:^|\\n)'+user+' 密码: ([^\\n]*)'));
+ if(pm)password=pm[1];
+ if(!keyMode&&HY2V&&HY2V.user==='y'&&HY2V.uname===user&&HY2V.upass)password=HY2V.upass;
+ const key=keyMode?$('key').value:'';
+ if(keyMode?!key:!password)return null;
+ return {user,password:keyMode?'':password,key}}
+function rememberLogin(user,password,key){$('user').value=user;if(password)$('pw').value=password;if(key)$('key').value=key;
+ try{sessionStorage.setItem('dp-login',JSON.stringify({user,password:password||'',key:key||''}))}catch(e){}}
+function restoreLogin(){try{const s=JSON.parse(sessionStorage.getItem('dp-login')||'null');if(!s||!s.user)return;
+ $('user').value=s.user;if(s.password)$('pw').value=s.password;if(s.key)$('key').value=s.key}catch(e){}}
+async function adoptNewUser(j){if(j.adopted||j.dry)return;const c=createdLogin();if(!c)return;j.adopted=true;
+ try{const r=await api('adopt',{ticket:j.ticket,user:c.user,password:c.password,key:c.key});j.ticket=r.ticket;saveJob(j);rememberLogin(c.user,c.password,c.key);setSt(()=>L('switched')+' '+c.user)}
+ catch(e){j.adopted=false}}
 async function follow(j,off,stream){running=true;cur=j;$('cancel').disabled=false;setRunLock();const t0=Date.now();
  try{
   if(stream){const r=await api('stream',{ticket:j.ticket,off},true);const rd=r.body.getReader(),d=new TextDecoder('utf-8');
    for(;;){const{value,done}=await rd.read();if(done)break;buf+=d.decode(value,{stream:true});paint();setSt(()=>L('job')+' '+j.id+' '+L('streaming')+((Date.now()-t0)/1000|0)+'s')}
-   buf+=d.decode();paint();setSt(()=>L('job')+' '+j.id+' '+L('streamEnd'))}
+   buf+=d.decode();paint();setSt(()=>L('job')+' '+j.id+' '+L('streamEnd'));await adoptNewUser(j)}
   else for(;;){const s=await api('status',{ticket:j.ticket,off});buf+=s.text;off=s.next;paint();
    setSt(()=>L('job')+' '+j.id+' '+(s.done?L('finished')+s.code:L('running')+((Date.now()-t0)/1000|0)+'s'),s.done&&s.code!==0?'err':'');
-   if(s.done){break}await sleep(3000)}
+   if(s.done){await adoptNewUser(j);break}await sleep(3000)}
  }catch(e){setSt(()=>L('err')+e.message,'err')}
  showResult();running=false;setRunLock();$('cancel').disabled=true}
 let TS_TOKEN='', TS_WID=null;
@@ -362,6 +378,7 @@ document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
 $('go').onclick=()=>run(false);$('gostream').onclick=()=>run(true);
 $('cancel').onclick=async()=>{if(!cur)return;try{const r=await api('cancel',{ticket:cur.ticket});setSt(()=>L('cancelRes')+(/killed/.test(r.result)?L('killed'):L('nothing')))}catch(e){setSt(()=>L('cancelErr')+e.message,'err')}};
+restoreLogin();
 applyLang();
 loadInfo();
 </script></body></html>

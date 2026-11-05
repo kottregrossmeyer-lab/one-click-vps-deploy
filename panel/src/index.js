@@ -24,6 +24,7 @@ const dec = (b) => (typeof b === 'string' ? b : new TextDecoder().decode(b || ne
 const enc = new TextEncoder();
 const jsonL = (lang, o, st = 200) => new Response(JSON.stringify(o && o.error ? { ...o, error: tr(o.error, lang) } : o), { status: st, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const rootsh = (cmd) => `if [ "$(id -u)" -eq 0 ]; then sh -c ${shq(cmd)}; else sudo -n sh -c ${shq(cmd)}; fi`;
 
 const ZH = {
   'ticket expired': '凭证已过期（有效期 6 小时），请重新运行',
@@ -212,11 +213,11 @@ const CHUNK = 200000;
 async function status(t, off) {
   await using ssh = await sshConnect(fromTicket(t));
   const D = `/tmp/dp-${t.id}`;
-  const ex = await ssh.exec(`cat ${D}/exit 2>/dev/null; [ -d ${D} ] && echo DIR || echo NODIR`); // exit BEFORE log read: no lost tail
+  const ex = await ssh.exec(rootsh(`cat ${D}/exit 2>/dev/null; [ -d ${D} ] && echo DIR || echo NODIR`)); // exit BEFORE log read: no lost tail
   const e = dec(ex.stdout).trim().split('\n');
   if (e[e.length - 1] === 'NODIR') bad('job not found on host (cleaned up?)');
   const code = e.length > 1 && e[0] !== '' ? parseInt(e[0], 10) : null;
-  const r = await ssh.exec(`tail -c +${off + 1} ${D}/log 2>/dev/null | head -c ${CHUNK}`);
+  const r = await ssh.exec(rootsh(`tail -c +${off + 1} ${D}/log 2>/dev/null | head -c ${CHUNK}`));
   let bytes = r.stdout instanceof Uint8Array ? r.stdout : enc.encode(dec(r.stdout));
   let end = bytes.length;
   for (let i = end - 1, n = 0; i >= 0 && n < 4; i--, n++) { // do not cut a UTF-8 char in half
@@ -232,7 +233,7 @@ async function status(t, off) {
 async function cancel(t) {
   await using ssh = await sshConnect(fromTicket(t));
   const D = `/tmp/dp-${t.id}`;
-  const r = await ssh.exec(`[ -f ${D}/pid ] && kill -TERM -- -$(cat ${D}/pid) 2>&1 && echo killed || echo nothing-to-kill`);
+  const r = await ssh.exec(rootsh(`[ -f ${D}/pid ] && kill -TERM -- -$(cat ${D}/pid) 2>&1 && echo killed || echo nothing-to-kill`));
   return { result: dec(r.stdout).trim() };
 }
 
@@ -309,6 +310,19 @@ export default {
         return json(await startJob(env, o, LANG));
       }
       const t = await open(env, body.ticket);
+      if (p === '/api/adopt') {
+        if (!owner && await limited(env, 'RL_AUTH', 'auth:' + ip)) return json({ error: 'rate limited' }, 429);
+        const user = String(body.user || '');
+        if (!USER_RE.test(user)) bad('invalid user');
+        const password = typeof body.password === 'string' ? body.password : '';
+        const key = typeof body.key === 'string' ? body.key.trim() : '';
+        if (password.length > 256) bad('password too long');
+        if (key && (!/^-----BEGIN (?:PRIVATE|RSA PRIVATE|EC PRIVATE) KEY-----/.test(key) || key.length > 8000)) bad('key must be a PKCS8 PEM (PRIVATE KEY header); convert OpenSSH keys with: ssh-keygen -p -m PKCS8 -f key');
+        if (!password && !key) bad('password or private key required');
+        await sshConnect({ host: t.h, port: t.po, user, password, key });
+        const ticket = await seal(env, { h: t.h, po: t.po, u: user, pw: password, k: key, id: t.id, s: t.s, dry: t.dry, exp: t.exp });
+        return json({ ticket });
+      }
       if (p === '/api/status') return json(await status(t, Math.max(0, parseInt(body.off || 0, 10) || 0)));
       if (p === '/api/cancel') return json(await cancel(t));
       if (p === '/api/stream') {
@@ -318,7 +332,7 @@ export default {
           const t0 = Date.now(), D = `/tmp/dp-${t.id}`, lang = LANG;
           try {
             await using ssh = await sshConnect(fromTicket(t));
-            await using ch = await ssh.execStream(`tail -c +${off + 1} -F ${D}/log 2>/dev/null & T=$!; while [ ! -f ${D}/exit ]; do sleep 1; done; sleep 1.5; kill $T 2>/dev/null; echo; echo "${T(lang, '[panel] 任务结束，退出码', '[panel] job finished, exit=')}$(cat ${D}/exit)"`);
+            await using ch = await ssh.execStream(rootsh(`tail -c +${off + 1} -F ${D}/log 2>/dev/null & T=$!; while [ ! -f ${D}/exit ]; do sleep 1; done; sleep 1.5; kill $T 2>/dev/null; echo; echo "${T(lang, '[panel] 任务结束，退出码', '[panel] job finished, exit=')}$(cat ${D}/exit)"`));
             const rd = ch.stdout.getReader();
             for (;;) { const { value, done } = await rd.read(); if (done) break; await w.write(value); }
           } catch (e) { await w.write(enc.encode(T(lang, '\n[panel] 实时流出错：', '\n[panel] stream error: ') + (e && e.message || e) + '\n')); }
