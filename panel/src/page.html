@@ -357,7 +357,6 @@ async function run(stream){if(running)return;
  try{const j=await api('start',body);loadInfo();const rec={id:j.id,ticket:j.ticket,script:j.script,host:j.host,dry:j.dry,expires:j.expires,started:Date.now()};saveJob(rec);await follow(rec,0,stream);mountTurnstile()}
  catch(e){setSt(()=>L('err')+e.message,'err');if(/人机|human check/i.test(e.message||''))mountTurnstile()}}
 async function resume(j){if(running)return;
- if(!$('pw').value && !$('key').value.trim()){setSt(()=>L('needPw'),'err');$('pw').focus();$('pw').scrollIntoView({behavior:'smooth',block:'center'});return}
  buf='';paint();$('log').scrollIntoView({behavior:'smooth',block:'start'});await follow(j,0,false)}
 document.addEventListener('gesturestart',e=>e.preventDefault());
 document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
