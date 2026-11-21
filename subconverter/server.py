@@ -50,10 +50,10 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.j
 # singbox 没有 fallback DNS,因为本来就不支持,多个dns组会增加问题,实测singbox引用去广告会导致路由器侧出问题
 
 DNS = {
-    # bootstrap 只用来解析 mirror/节点名(拉规则集之前)。2026-11-21 换成 114.114.114.114(114DNS)。
+    # bootstrap 只用来解析 mirror/节点名(拉规则集之前)。2026-11-21 换成 119.29.29.29(腾讯 DNSPod 公共 DNS)。
     # 原来用的火山引擎公共 DNS 对权威在 Cloudflare/AWS 上的域名(cloudflare.com、本域)冷查询一律超时
     # → 客户端启动时报 'lookup mirror.notebase.cn: context deadline exceeded'。
-    'bootstrap': '114.114.114.114', 'remote': '8.8.8.8',
+    'bootstrap': '119.29.29.29', 'remote': '8.8.8.8',
     'adgServer': 'dns.alidns.com', 'adgPort': 443, 'adgPath': '/dns-query',
 }
 DASHBOARD_URL = 'https://mirror.notebase.cn/download/singbox-ui.zip'
