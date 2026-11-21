@@ -1158,7 +1158,7 @@ def build_clash(nodes, v6_on=False, dns_split=False):
     dns_lines += [
         '  default-nameserver:',
         f'    - {DNS["bootstrap"]}',
-        '    - 119.29.29.29',
+        '    - 223.5.5.5',
     ]
     if dns_split:
         dns_lines += [
