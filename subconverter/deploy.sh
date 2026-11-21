@@ -642,8 +642,11 @@ ensure_acme() {
 save_issued() {
   local name="$1" crt="$2" key="$3"
   mkdir -p "$(dirname "$crt")" "$(dirname "$key")"
+  # ⚠️ reloadcmd 必须是 reload(2026-11-21 修): 原来写 "true" → 续签成功后 nginx 仍用旧证书,
+  #    现象是"证书明明续了, 客户端还报过期"。nginx 没在跑时退化成 start, 别让 install 失败。
   "$ACME" --install-cert -d "$name" \
-    --fullchain-file "$crt" --key-file "$key" --reloadcmd "true"
+    --fullchain-file "$crt" --key-file "$key" \
+    --reloadcmd "systemctl reload nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true"
 }
 
 echo -e "${CYAN}[6]${NC} 准备证书..."
@@ -655,11 +658,17 @@ case "$MODE" in
       log_progress "   (为公网 IP $PUBIP 申请证书，80 端口要能从公网访问)"
       systemctl stop nginx >/dev/null 2>&1 || true
       rc=0
+      # ⚠️ pre/post hook 必带(2026-11-21 修): standalone 验证要独占 80, 而部署完 nginx 就占着 80,
+      #    不带 hook → acme 的续签 cron **每次都失败**, 短命证书(7 天)一过期就全站 TLS 报错。
+      #    实测事故: 192.220.52.8 的 IP 证书 Nov 12 过期, 客户端 "certificate has expired"。
+      #    acme.sh 会把这两个 hook 写进续签配置, 以后 cron 自动续也会先停后起 nginx。
       "$ACME" --issue --server letsencrypt --cert-profile shortlived --days 3 \
-        -d "$PUBIP" --standalone || rc=$?
+        -d "$PUBIP" --standalone \
+        --pre-hook "systemctl stop nginx" --post-hook "systemctl start nginx" || rc=$?
       systemctl start nginx >/dev/null 2>&1 || true
       if [ "$rc" = "0" ] || [ "$rc" = "2" ]; then
-        if save_issued "$PUBIP" /etc/nginx/ssl/ip.crt /etc/nginx/ssl/ip.key; then
+        if save_issued "$PUBIP" /etc/nginx/ssl/ip.crt /etc/nginx/ssl/ip.key \
+           && openssl x509 -in /etc/nginx/ssl/ip.crt -noout -checkend 0 >/dev/null 2>&1; then
           CERT=/etc/nginx/ssl/ip.crt
           CERTKEY=/etc/nginx/ssl/ip.key
           REAL_OK=1
